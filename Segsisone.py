@@ -20,7 +20,7 @@ if root_dir not in sys.path:
 # Importações
 from auth.login_page import show_login_page, show_user_header, show_logout_button
 from auth.auth_utils import authenticate_user, is_user_logged_in, get_user_role, get_user_unit_id
-from gdrive.matrix_manager import MatrixManager
+from managers.matrix_manager import MatrixManager
 from operations.training_matrix_manager import MatrixManager as TrainingMatrixManager
 from front.dashboard import show_dashboard_page
 from front.administracao import show_admin_page
@@ -42,26 +42,83 @@ def configurar_pagina():
 def initialize_managers():
     """
     Função central para criar, destruir e gerenciar as instâncias dos managers.
-    ✅ AGORA: Usa unit_id ao invés de spreadsheet_id
+    Agora com validações robustas e tratamento de erros.
     """
     unit_id = st.session_state.get('unit_id')
-    folder_id = st.session_state.get('folder_id')
+    folder_id = st.session_state.get('folder_id')  # Opcional
     
     # Verifica se precisa reinicializar os managers
     if unit_id and st.session_state.get('managers_unit_id') != unit_id:
-        logger.info(f"Trocando de unidade. Inicializando managers para a unidade: ...{unit_id[-6:] if unit_id else 'None'}")
+        logger.info(f"Trocando de unidade. Inicializando managers para: ...{unit_id[-6:] if unit_id else 'None'}")
         
-        with st.spinner("Configurando ambiente da unidade..."):
-            st.session_state.employee_manager = EmployeeManager(unit_id, folder_id)
-            st.session_state.docs_manager = CompanyDocsManager(unit_id)
-            st.session_state.epi_manager = EPIManager(unit_id)
-            st.session_state.action_plan_manager = ActionPlanManager(unit_id)
-            st.session_state.nr_analyzer = NRAnalyzer(unit_id)
-            st.session_state.matrix_manager_unidade = TrainingMatrixManager(unit_id)
+        try:
+            with st.spinner("Configurando ambiente da unidade..."):
+                # ✅ Inicializa managers com tratamento de erro
+                try:
+                    employee_manager = EmployeeManager(unit_id, folder_id)
+                    if not employee_manager.data_loaded_successfully:
+                        raise Exception("Falha ao carregar dados de funcionários")
+                    st.session_state.employee_manager = employee_manager
+                except Exception as e:
+                    logger.error(f"Erro ao inicializar EmployeeManager: {e}")
+                    st.error("❌ Erro ao carregar dados de funcionários")
+                    return
+                
+                try:
+                    docs_manager = CompanyDocsManager(unit_id)
+                    if not docs_manager.data_loaded_successfully:
+                        raise Exception("Falha ao carregar documentos")
+                    st.session_state.docs_manager = docs_manager
+                except Exception as e:
+                    logger.error(f"Erro ao inicializar CompanyDocsManager: {e}")
+                    st.error("❌ Erro ao carregar documentos da empresa")
+                    return
+                
+                try:
+                    epi_manager = EPIManager(unit_id)
+                    if not epi_manager.data_loaded_successfully:
+                        raise Exception("Falha ao carregar dados de EPIs")
+                    st.session_state.epi_manager = epi_manager
+                except Exception as e:
+                    logger.error(f"Erro ao inicializar EPIManager: {e}")
+                    st.error("❌ Erro ao carregar dados de EPIs")
+                    return
+                
+                try:
+                    action_plan_manager = ActionPlanManager(unit_id)
+                    if not action_plan_manager.data_loaded_successfully:
+                        raise Exception("Falha ao carregar plano de ação")
+                    st.session_state.action_plan_manager = action_plan_manager
+                except Exception as e:
+                    logger.error(f"Erro ao inicializar ActionPlanManager: {e}")
+                    st.error("❌ Erro ao carregar plano de ação")
+                    return
+                
+                try:
+                    nr_analyzer = NRAnalyzer(unit_id)
+                    st.session_state.nr_analyzer = nr_analyzer
+                except Exception as e:
+                    logger.error(f"Erro ao inicializar NRAnalyzer: {e}")
+                    st.error("❌ Erro ao carregar analisador NR")
+                    return
+                
+                try:
+                    matrix_manager = TrainingMatrixManager(unit_id)
+                    st.session_state.matrix_manager_unidade = matrix_manager
+                except Exception as e:
+                    logger.error(f"Erro ao inicializar TrainingMatrixManager: {e}")
+                    st.error("❌ Erro ao carregar matriz de treinamentos")
+                    return
             
-        st.session_state.managers_unit_id = unit_id
-        st.session_state.managers_initialized = True
-        logger.info("Managers da unidade inicializados com sucesso.")
+            st.session_state.managers_unit_id = unit_id
+            st.session_state.managers_initialized = True
+            st.toast("✅ Ambiente configurado com sucesso!", icon="✅")
+            logger.info("Managers da unidade inicializados com sucesso.")
+            
+        except Exception as e:
+            logger.error(f"Erro crítico ao inicializar managers: {e}")
+            st.error("❌ Falha ao configurar ambiente. Tente novamente.")
+            st.session_state.managers_initialized = False
     
     elif not unit_id:
         # Usuário global - reseta managers de unidade

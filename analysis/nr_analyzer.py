@@ -2,21 +2,57 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import google.generativeai as genai
+from google.generativeai.client import configure
+from google.generativeai.generative_models import GenerativeModel
 import re
 import json
 import tempfile
 import os
 import random
 from datetime import datetime
+from typing import Optional
 from sklearn.metrics.pairwise import cosine_similarity
 from AI.api_Operation import PDFQA
-from operations.sheet import SheetOperations
+from operations.supabase_operations import SupabaseOperations
+import logging
+
+logger = logging.getLogger(__name__)
+
+def validate_managers(manager_dict: dict) -> Optional[str]:
+    """
+    Valida se todos os managers necessários estão presentes e inicializados corretamente.
+    
+    Args:
+        manager_dict: Dicionário contendo os managers a serem validados.
+        
+    Returns:
+        None se tudo estiver ok, ou mensagem de erro se houver problema.
+    """
+    required_managers = ['supabase_ops', 'google_api_manager', 'pdf_analyzer']
+    
+    # Verifica se todos os managers necessários estão presentes
+    for manager in required_managers:
+        if manager not in manager_dict:
+            return f"Manager '{manager}' não encontrado"
+        if manager_dict[manager] is None:
+            return f"Manager '{manager}' não foi inicializado"
+            
+    # Verifica tipos específicos
+    if not isinstance(manager_dict['supabase_ops'], SupabaseOperations):
+        return "SupabaseOperations não inicializado corretamente"
+    if not isinstance(manager_dict['pdf_analyzer'], PDFQA):
+        return "PDFQA não inicializado corretamente"
+            
+    return None
 
 @st.cache_data(ttl=3600)
-def load_preprocessed_rag_base() -> tuple[pd.DataFrame, np.ndarray | None]:
+def load_preprocessed_rag_base() -> tuple[Optional[pd.DataFrame], Optional[np.ndarray]]:
     """
     Carrega o DataFrame e os embeddings pré-processados de arquivos locais.
     Esta função agora apenas carrega e retorna os dados, sem st.toast ou st.error.
+    
+    Returns:
+        Tupla contendo (DataFrame, array de embeddings) ou (None, None) em caso de erro
     """
     try:
         df = pd.read_pickle("rag_dataframe.pkl")
@@ -29,49 +65,103 @@ def load_preprocessed_rag_base() -> tuple[pd.DataFrame, np.ndarray | None]:
         return None, None
 
 class NRAnalyzer:
-    def __init__(self, spreadsheet_id: str):
+    def __init__(self, unit_id: Optional[str], google_api_manager):
         """
         Inicialização que carrega a base RAG e lida com as mensagens de UI.
+        
+        Args:
+            unit_id: ID da unidade para operações com Supabase
+            google_api_manager: Manager do Google API para manipulação de PDFs
         """
-        self.pdf_analyzer = PDFQA()
-        self.sheet_ops = SheetOperations(spreadsheet_id)
+        self.unit_id = unit_id
+        self.google_api_manager = google_api_manager
         
-        with st.spinner("Carregando base de conhecimento..."):
-            self.rag_df, self.rag_embeddings = load_preprocessed_rag_base()
-
-        # Verifica o resultado do carregamento e mostra as mensagens apropriadas
-        if self.rag_df is None or self.rag_embeddings is None:
-            st.error("ERRO CRÍTICO: Arquivos da base de conhecimento ('rag_dataframe.pkl' ou 'rag_embeddings.npy') não encontrados. A funcionalidade de auditoria com IA será desativada.")
-            # Garante que os atributos sejam DataFrames vazios para evitar erros posteriores
-            self.rag_df = pd.DataFrame()
-            self.rag_embeddings = np.array([])
-        else:
-            st.toast("Base de conhecimento carregada com sucesso.", icon="🧠")
+        # Managers
+        self._pdf_analyzer = None
+        self.supabase_ops = None  # Será inicializado após validação
         
+        # Cache de dados
+        self._page_id_map = None
+        self.df = None  # Será carregado após validação
+        self.embeddings = None
+        
+        # Validação inicial
+        self._initialize_managers()
+        
+        # Setup de bibliotecas
+        configure(api_key=os.getenv("GEMINI_API_KEY"))
+        
+    def _initialize_managers(self):
+        """
+        Inicializa e valida todos os managers necessários.
+        Levanta RuntimeError se houver falha na inicialização.
+        """
         try:
-            if not st.secrets.get("general", {}).get("GEMINI_AUDIT_KEY"):
-                 st.warning("Chave 'GEMINI_AUDIT_KEY' não encontrada. A busca na base de conhecimento será desativada.")
-        except Exception:
-            pass
+            if self.unit_id is None:
+                raise ValueError("unit_id não pode ser None")
+                
+            # Tenta inicializar o Supabase
+            self.supabase_ops = SupabaseOperations(unit_id=self.unit_id)
+            
+            # Inicializa o PDF Analyzer
+            self._pdf_analyzer = PDFQA() if self.google_api_manager else None
+            
+            # Carrega os dados RAG
+            self.df, self.embeddings = load_preprocessed_rag_base()
+            
+            # Valida todos os managers
+            managers = {
+                'supabase_ops': self.supabase_ops,
+                'google_api_manager': self.google_api_manager,
+                'pdf_analyzer': self._pdf_analyzer
+            }
+            
+            validation_error = validate_managers(managers)
+            if validation_error:
+                st.error(f"❌ Erro de inicialização: {validation_error}")
+                raise RuntimeError(validation_error)
+                
+        except Exception as e:
+            logger.error(f"Erro ao inicializar managers: {str(e)}")
+            st.error("❌ Falha ao inicializar componentes necessários")
+            raise RuntimeError("Falha na inicialização dos managers")
 
     def _find_semantically_relevant_chunks(self, query_text: str, top_k: int = 5) -> str:
-        if self.rag_df.empty or self.rag_embeddings is None or self.rag_embeddings.size == 0:
+        """
+        Busca chunks de texto semanticamente relevantes na base de conhecimento.
+        
+        Args:
+            query_text: Texto da consulta
+            top_k: Número de chunks a retornar
+            
+        Returns:
+            String com os chunks mais relevantes ou mensagem de erro
+        """
+        # Valida a base de dados
+        if self.df is None or self.df.empty or self.embeddings is None or self.embeddings.size == 0:
+            logger.error("Base de conhecimento não encontrada ou vazia")
             return "Base de conhecimento indisponível ou não indexada."
 
         try:
-            query_embedding_result = genai.embed_content(
-                model='models/text-embedding-004',  # CORRIGIDO: Modelo atualizado
-                content=[query_text],
-                task_type="RETRIEVAL_QUERY"
-            )
-            query_embedding = np.array(query_embedding_result['embedding'])
+            # Gera embedding para a consulta usando TextEmbedding
+            model = GenerativeModel('embedding-001')
+            embedding_result = model.generate_content(contents=query_text).text
+            query_embedding = np.array(json.loads(embedding_result))
             
-            similarities = cosine_similarity(query_embedding, self.rag_embeddings)[0]
+            # Calcula similaridade e pega os top_k mais relevantes
+            similarities = cosine_similarity(query_embedding, self.embeddings)[0]
             top_k_indices = similarities.argsort()[-top_k:][::-1]
-            relevant_chunks = self.rag_df.iloc[top_k_indices]
+            relevant_chunks = self.df.iloc[top_k_indices]
+            
+            # Formata e retorna os resultados
+            if 'Answer_Chunk' not in relevant_chunks.columns:
+                logger.error("Coluna 'Answer_Chunk' não encontrada no DataFrame")
+                return "Erro na estrutura da base de conhecimento"
             
             return "\n\n---\n\n".join(relevant_chunks['Answer_Chunk'].tolist())
+            
         except Exception as e:
+            logger.error(f"Erro durante a busca semântica: {str(e)}")
             st.warning(f"Erro durante a busca semântica (verifique a chave de API): {e}")
             return "Erro ao buscar chunks relevantes na base de conhecimento."
             
@@ -92,7 +182,9 @@ class NRAnalyzer:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
                 temp_file.write(file_content)
                 temp_path = temp_file.name
-            analysis_result, _ = self.pdf_analyzer.answer_question([temp_path], prompt, task_type='audit')
+            if not self._pdf_analyzer:
+                raise ValueError("PDF Analyzer não foi inicializado")
+            analysis_result, _ = self._pdf_analyzer.answer_question([temp_path], prompt, task_type='audit')
             return self._parse_advanced_audit_result(analysis_result) if analysis_result else None
         finally:
             if temp_path and os.path.exists(temp_path):
@@ -292,7 +384,13 @@ class NRAnalyzer:
         except (json.JSONDecodeError, AttributeError):
             return {"summary": "Falha na Análise (Erro de JSON)", "details": [{"item_verificacao": "Resposta Bruta da IA", "observacao": json_string, "status": "Não Conforme"}]}
 
-    def create_action_plan_from_audit(self, audit_result: dict, company_id: str, doc_id: str, employee_id: str | None = None):
+    def create_action_plan_from_audit(
+        self, 
+        audit_result: dict, 
+        company_id: str, 
+        doc_id: str, 
+        employee_id: Optional[str] = None
+    ) -> int:
         """
         O employee_id ainda pode ser passado para o LOG, mas NÃO será inserido na planilha.
         """
@@ -309,7 +407,10 @@ class NRAnalyzer:
             return 0
         
         from operations.action_plan import ActionPlanManager
-        action_plan_manager = ActionPlanManager(self.sheet_ops.spreadsheet_id)
+        # ✅ USA unit_id ao invés de spreadsheet_id
+        if not self.supabase_ops or not self.supabase_ops.unit_id:
+            raise ValueError("SupabaseOperations não inicializado corretamente ou unit_id não disponível")
+        action_plan_manager = ActionPlanManager(unit_id=str(self.supabase_ops.unit_id))
         
         audit_run_id = f"audit_{doc_id}_{random.randint(1000, 9999)}"
         created_count = 0

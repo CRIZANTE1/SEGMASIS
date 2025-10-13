@@ -1,13 +1,17 @@
 import streamlit as st
 import pandas as pd
+import logging
 from datetime import date
-from gdrive.matrix_manager import MatrixManager as GlobalMatrixManager
+from managers.matrix_manager import MatrixManager as GlobalMatrixManager
+
+logger = logging.getLogger('segsisone_app.administracao')
 from operations.employee import EmployeeManager
 from operations.company_docs import CompanyDocsManager
 from auth.auth_utils import check_permission
 from ui.metrics import display_minimalist_metrics
-from gdrive.google_api_manager import GoogleApiManager
+from managers.google_api_manager import GoogleApiManager
 from operations.audit_logger import log_action
+from operations.cached_loaders import load_all_unit_data
 
 @st.cache_data(ttl=300)
 def load_aggregated_data():
@@ -391,7 +395,12 @@ def user_dialog(user_data=None):
                 if matrix_manager_global.get_user_info(email):
                     st.error(f"O e-mail '{email}' já está cadastrado.")
                 else:
-                    user_data = [email, nome, role, unidade_associada]
+                    user_data = {
+                        'email': email,
+                        'nome': nome,
+                        'role': role,
+                        'unidade_associada': unidade_associada
+                    }
                     if matrix_manager_global.add_user(user_data):
                         st.success(f"Usuário '{nome}' adicionado com sucesso!")
                         st.rerun()
@@ -446,59 +455,41 @@ def show_admin_page():
 
 
 
-            with st.expander("🔧 Migração: Adicionar Sistema de Hash Anti-Duplicatas"):
-                st.markdown("""
-                ### Sistema de Detecção de Arquivos Duplicados
-                
-                Esta ferramenta adiciona a coluna `arquivo_hash` nas planilhas de todas as unidades,
-                permitindo a detecção automática de arquivos PDF duplicados.
-                
-                **O que faz:**
-                - Adiciona coluna `arquivo_hash` nas abas: ASOs, Treinamentos, Documentos da Empresa e Fichas de EPI
-                - Mantém compatibilidade com registros antigos
-                - Não altera dados existentes
-                
-                **Seguro:** Esta operação apenas adiciona colunas vazias, não modifica dados.
-                """)
-                
-                if st.button("🚀 Executar Migração em Todas as Unidades", type="primary"):
-                    from operations.hash_migration import executar_migracao_em_todas_unidades
-                    
-                    with st.spinner("Executando migração..."):
-                        resultados = executar_migracao_em_todas_unidades()
-                    
-                    st.balloons()
+            # Seção de migração de hash removida pois já não é mais necessária
 
             with st.expander("Provisionar Nova Unidade Operacional"):
                 with st.form("provision_form"):
                     new_unit_name = st.text_input("Nome da Nova Unidade")
+                    new_unit_email = st.text_input("E-mail de Contato da Unidade")
+                    
                     if st.form_submit_button("🚀 Iniciar Provisionamento"):
-                        if not new_unit_name:
-                            st.error("O nome da unidade não pode ser vazio.")
-                        elif matrix_manager_global.get_unit_info(new_unit_name):
+                        if not new_unit_name or not new_unit_email:
+                            st.error("Nome e e-mail são obrigatórios.")
+                        elif matrix_manager_global.get_unit_info_by_name(new_unit_name):
                             st.error(f"Erro: Uma unidade com o nome '{new_unit_name}' já existe.")
                         else:
-                            with st.spinner(f"Criando infraestrutura para '{new_unit_name}'..."):
+                            with st.spinner(f"Registrando unidade '{new_unit_name}'..."):
                                 try:
-                                    from gdrive.config import CENTRAL_DRIVE_FOLDER_ID
-                                    api_manager = GoogleApiManager()
-                                    st.write("1/4 - Criando pasta...")
-                                    new_folder_id = api_manager.create_folder(f"SEGMA-SIS - {new_unit_name}", CENTRAL_DRIVE_FOLDER_ID)
-                                    if not new_folder_id: raise Exception("Falha ao criar pasta.")
-                                    st.write("2/4 - Criando Planilha...")
-                                    new_sheet_id = api_manager.create_spreadsheet(f"SEGMA-SIS - Dados - {new_unit_name}", new_folder_id)
-                                    if not new_sheet_id: raise Exception("Falha ao criar Planilha.")
-                                    st.write("3/4 - Configurando abas...")
-                                    if not api_manager.setup_sheets_from_config(new_sheet_id, "sheets_config.yaml"):
-                                        raise Exception("Falha ao configurar as abas.")
-                                    st.write("4/4 - Registrando na Matriz...")
-                                    if not matrix_manager_global.add_unit([new_unit_name, new_sheet_id, new_folder_id]):
-                                        raise Exception("Falha ao registrar na Planilha Matriz.")
-                                    log_action("PROVISION_UNIT", {"unit_name": new_unit_name, "sheet_id": new_sheet_id})
-                                    st.success(f"Unidade '{new_unit_name}' provisionada com sucesso!")
-                                    st.rerun()
+                                    # ✅ Apenas registra no Supabase (sem criar pasta no Drive)
+                                    unit_data = {
+                                        'nome_unidade': new_unit_name,
+                                        'email_contato': new_unit_email,
+                                        'folder_id': ''  # Opcional, pode ser vazio
+                                    }
+                                    
+                                    if matrix_manager_global.add_unit(unit_data):
+                                        log_action("PROVISION_UNIT", {
+                                            "unit_name": new_unit_name,
+                                            "email": new_unit_email
+                                        })
+                                        st.success(f"✅ Unidade '{new_unit_name}' criada com sucesso!")
+                                        st.rerun()
+                                    else:
+                                        st.error("Falha ao registrar a unidade.")
+                                        
                                 except Exception as e:
                                     st.error(f"Ocorreu um erro: {e}")
+                                    logger.error(f"Erro ao provisionar unidade: {e}", exc_info=True)
             
             st.divider()
             st.subheader("Gerenciar Usuários do Sistema")

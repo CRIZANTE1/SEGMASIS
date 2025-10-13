@@ -5,6 +5,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def get_supabase_client() -> Client:
     """
     Retorna um cliente Supabase configurado.

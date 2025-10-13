@@ -1,7 +1,7 @@
 import streamlit as st
 from datetime import date
 import pandas as pd
-from fuzzywuzzy import fuzz
+from fuzzywuzzy import process, fuzz
 import logging
 
 from auth.auth_utils import check_permission
@@ -45,47 +45,117 @@ def handle_delete_confirmation(docs_manager, employee_manager):
     Gerencia o diálogo de confirmação de exclusão.
     Esta função é chamada no final da renderização da página.
     """
-    if 'items_to_delete' in st.session_state:
-        items = st.session_state.items_to_delete
+    if 'items_to_delete' not in st.session_state:
+        return
+    
+    items = st.session_state.items_to_delete
+    
+    # ✅ Validação adicional
+    if not items or not isinstance(items, list):
+        logger.warning("items_to_delete está vazio ou em formato inválido")
+        del st.session_state.items_to_delete
+        return
+        
+    # Validação dos itens individuais
+    valid_items = []
+    for item in items:
+        if not isinstance(item, dict):
+            logger.warning(f"Item inválido encontrado (não é dict): {item}")
+            continue
+            
+        if 'id' not in item or not item['id']:
+            logger.warning("Item sem ID encontrado")
+            continue
+            
+        if 'name' not in item or not item['name']:
+            item['name'] = 'Nome não disponível'
+            
+        valid_items.append(item)
+        
+    if not valid_items:
+        logger.error("Nenhum item válido para exclusão")
+        del st.session_state.items_to_delete
+        st.error("❌ Não foi possível processar os itens para exclusão")
+        return
+        
+    st.session_state.items_to_delete = valid_items
 
-        @st.dialog("Confirmar Exclusão")
-        def confirm_multiple_delete():
-            st.warning(f"Você tem certeza que deseja excluir permanentemente os {len(items)} registro(s) selecionado(s)?")
+    @st.dialog("Confirmar Exclusão")
+    def confirm_multiple_delete():
+        st.warning(
+            f"Você tem certeza que deseja excluir permanentemente "
+            f"{'o' if len(items) == 1 else 'os'} {len(items)} registro(s) selecionado(s)?"
+        )
+        
+        with st.container(height=150):
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                    
+                item_name = item.get('name', 'Nome não disponível')
+                item_id = item.get('id', 'ID não disponível')
+                
+                if item_id == 'ID não disponível':
+                    logger.warning(f"Item sem ID válido: {item}")
+                    continue
+                    
+                st.markdown(f"- **{item_name}** (ID: {item_id})")
+        
+        st.caption("Esta ação também removerá os arquivos associados do Supabase Storage e não pode ser desfeita.")
+        
+        col1, col2 = st.columns(2)
+        if col1.button("Cancelar", use_container_width=True):
+            del st.session_state.items_to_delete
+            st.rerun()
+        
+        if col2.button(f"Sim, Excluir {len(items)} Iten(s)", type="primary", use_container_width=True):
+            total_success = 0
+            errors = []
             
-            with st.container(height=150):
+            with st.spinner("Excluindo registros..."):
                 for item in items:
-                    st.markdown(f"- **{item['name']}** (ID: {item['id']})")
-            
-            st.caption("Esta ação também removerá os arquivos associados do Google Drive e não pode ser desfeita.")
-            
-            col1, col2 = st.columns(2)
-            if col1.button("Cancelar", use_container_width=True):
-                del st.session_state.items_to_delete
-                st.rerun()
-            
-            if col2.button(f"Sim, Excluir {len(items)} Iten(s)", type="primary", use_container_width=True):
-                total_success = 0
-                with st.spinner("Excluindo registros..."):
-                    for item in items:
-                        success = False
-                        if item['type'] == 'doc_empresa':
-                            success = docs_manager.delete_company_document(item['id'], item.get('file_url'))
-                        elif item['type'] == 'aso':
-                            success = employee_manager.delete_aso(item['id'], item.get('file_url'))
-                        elif item['type'] == 'treinamento':
-                            success = employee_manager.delete_training(item['id'], item.get('file_url'))
+                    success = False
+                    item_type = item.get('type')
+                    item_id = item.get('id')
+                    file_url = item.get('file_url')
+                    
+                    try:
+                        if item_type == 'doc_empresa':
+                            success = docs_manager.delete_company_document(item_id, file_url)
+                        elif item_type == 'aso':
+                            success = employee_manager.delete_aso(item_id, file_url)
+                        elif item_type == 'treinamento':
+                            success = employee_manager.delete_training(item_id, file_url)
+                        
                         if success:
                             total_success += 1
-                
-                if total_success == len(items):
-                    st.success(f"{total_success} registro(s) excluído(s) com sucesso!")
-                else:
-                    st.error(f"Falha ao excluir. {total_success} de {len(items)} registros foram removidos.")
-                
-                del st.session_state.items_to_delete
-                st.rerun()
+                        else:
+                            errors.append(f"Falha ao excluir {item.get('name', item_id)}")
+                    except Exception as e:
+                        logger.error(f"Erro ao deletar item {item_id}: {e}")
+                        errors.append(f"Erro ao excluir {item.get('name', item_id)}: {str(e)}")
+            
+            if total_success == len(items):
+                st.success(f"✅ {total_success} registro(s) excluído(s) com sucesso!")
+            elif total_success > 0:
+                st.warning(
+                    f"⚠️ Exclusão parcial: {total_success} de {len(items)} registros foram removidos."
+                )
+                if errors:
+                    with st.expander("Ver erros"):
+                        for error in errors:
+                            st.error(error)
+            else:
+                st.error("❌ Falha ao excluir registros.")
+                if errors:
+                    with st.expander("Ver erros"):
+                        for error in errors:
+                            st.error(error)
+            
+            del st.session_state.items_to_delete
+            st.rerun()
 
-        confirm_multiple_delete()
+    confirm_multiple_delete()
 
 def show_dashboard_page():
     logger.info("Iniciando a renderização da página do dashboard.")

@@ -1,5 +1,5 @@
 import streamlit as st
-from gdrive.matrix_manager import MatrixManager
+from managers.matrix_manager import MatrixManager
 
 def is_oidc_available():
     """Verifica se o login OIDC está configurado e disponível."""

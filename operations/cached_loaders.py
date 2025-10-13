@@ -39,13 +39,25 @@ def load_all_unit_data(unit_id: str) -> dict:
         ('asos', ['data_aso', 'vencimento']),
         ('trainings', ['data', 'vencimento']),
         ('company_docs', ['data_emissao', 'vencimento']),
-        ('employees', ['data_admissao'])
+        ('employees', ['data_admissao']),
+        ('epis', ['data_entrega', 'vencimento']),  # ✅ FALTAVA EPI
+        ('action_plan', ['data_criacao', 'data_conclusao', 'prazo'])  # ✅ FALTAVA PLANO DE AÇÃO
     ]:
         df = data[df_name]
         if not df.empty:
             for col in date_cols:
                 if col in df.columns:
+                    # ✅ Conta quantas datas inválidas foram encontradas
+                    before_count = df[col].notna().sum()
                     df[col] = pd.to_datetime(df[col], errors='coerce')
+                    after_count = df[col].notna().sum()
+                    
+                    if before_count != after_count:
+                        invalid_count = before_count - after_count
+                        logger.warning(
+                            f"Tabela '{df_name}', coluna '{col}': "
+                            f"{invalid_count} data(s) inválida(s) convertida(s) para NaT"
+                        )
     
     return data
 

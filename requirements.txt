@@ -19,3 +19,5 @@ fuzzywuzzy
 python-Levenshtein
 pyyaml
 streamlit-option-menu
+supabase>=2.0.0
+postgrest>=0.10.0

@@ -2,7 +2,7 @@ import pandas as pd
 from operations.file_hash import calcular_hash_arquivo, verificar_hash_seguro
 import streamlit as st
 from datetime import datetime, date, timedelta
-from gdrive.google_api_manager import GoogleApiManager
+from managers.google_api_manager import GoogleApiManager
 from AI.api_Operation import PDFQA
 from operations.sheet import SheetOperations
 import tempfile
@@ -13,9 +13,33 @@ import json
 from dateutil.relativedelta import relativedelta
 from operations.audit_logger import log_action
 from auth.auth_utils import get_user_email
-from fuzzywuzzy import process
+from difflib import SequenceMatcher
+
+def similar(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio()
 import logging
+from typing import Optional, Union
 from operations.cached_loaders import load_all_unit_data
+
+def format_date_safe(dt: Optional[Union[date, datetime]], fmt: str = "%Y-%m-%d") -> Optional[str]:
+    """
+    Formata uma data de forma segura, retornando None se a data for inválida.
+    
+    Args:
+        dt: Data a ser formatada (pode ser date ou datetime)
+        fmt: Formato desejado para a string de data
+        
+    Returns:
+        String formatada com a data ou None se a data for inválida
+    """
+    if not dt or not isinstance(dt, (date, datetime)):
+        return None
+    try:
+        return dt.strftime(fmt)
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Erro ao formatar data {dt}: {e}")
+        return None
 
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
@@ -27,12 +51,11 @@ logger = logging.getLogger('segsisone_app.employee_manager')
 from operations.supabase_operations import SupabaseOperations
 
 class EmployeeManager:
-    def __init__(self, unit_id: str, folder_id: str): # folder_id ainda pode ser útil para uploads legados
+    def __init__(self, unit_id: str, folder_id: str = ""):  # Usando string vazia como padrão em vez de None
         logger.info(f"Inicializando EmployeeManager para unit_id: ...{unit_id[-6:]}")
         self.unit_id = unit_id
-        self.supabase_ops = SupabaseOperations(unit_id) # Para operações de escrita
-        self.folder_id = folder_id # Manter por enquanto
-        self.api_manager = GoogleApiManager()
+        self.supabase_ops = SupabaseOperations(unit_id)
+        self.folder_id = folder_id  # Mantido apenas para compatibilidade legada
         self._pdf_analyzer = None
         self.data_loaded_successfully = False
         
@@ -66,17 +89,53 @@ class EmployeeManager:
 
     def upload_documento_e_obter_link(self, arquivo, novo_nome: str):
         """
-        Faz o upload de um arquivo para a pasta da unidade e retorna o link.
-        Esta função atua como um wrapper para o GoogleApiManager.
+        Faz o upload de um arquivo usando Supabase Storage e retorna o link.
         """
-        if not self.folder_id:
-            st.error("O ID da pasta desta unidade não está definido. Não é possível fazer o upload.")
-            logger.error(f"Tentativa de upload para a unidade, mas o folder_id não foi fornecido no construtor do EmployeeManager.")
+        if not self.unit_id:
+            st.error("O ID da unidade não está definido. Não é possível fazer o upload.")
+            logger.error("Tentativa de upload sem unit_id definido")
             return None
         
-        # A instância self.api_manager já foi criada no __init__
-        logger.info(f"Iniciando upload do documento '{novo_nome}' para a pasta ID: ...{self.folder_id[-6:]}")
-        return self.api_manager.upload_file(self.folder_id, arquivo, novo_nome)
+        try:
+            from operations.supabase_storage import SupabaseStorageManager
+            storage_manager = SupabaseStorageManager(self.unit_id)
+            
+            # Determina o tipo de documento pelo nome
+            doc_type = self._infer_doc_type(novo_nome)
+            
+            logger.info(f"Iniciando upload do documento '{novo_nome}' para a unidade: ...{self.unit_id[-6:]}")
+            
+            result = storage_manager.upload_file(
+                file_content=arquivo.getvalue(),
+                filename=novo_nome,
+                doc_type=doc_type,
+                content_type=arquivo.type
+            )
+            
+            if result and 'url' in result:
+                return result['url']
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Erro ao fazer upload: {e}", exc_info=True)
+            st.error(f"Erro ao fazer upload: {str(e)}")
+            return None
+
+    def _infer_doc_type(self, filename: str) -> str:
+        """Infere o tipo de documento pelo nome do arquivo."""
+        filename_lower = filename.lower()
+        
+        if 'aso' in filename_lower:
+            return 'aso'
+        elif 'training' in filename_lower or 'treinamento' in filename_lower:
+            return 'treinamento'
+        elif 'epi' in filename_lower:
+            return 'epi'
+        elif any(doc in filename_lower for doc in ['pgr', 'pcmso', 'ppr', 'pca']):
+            return 'doc_empresa'
+        
+        return 'aso'  # Default
 
 
     def load_data(self):
@@ -259,7 +318,7 @@ class EmployeeManager:
         return None, "Falha ao obter ID da empresa."
 
     def add_employee(self, nome, cargo, data_admissao, empresa_id):
-        new_data = {'nome': nome, 'cargo': cargo, 'data_admissao': data_admissao.strftime("%Y-%m-%d"), 'empresa_id': empresa_id, 'status': 'Ativo'}
+        new_data = {'nome': nome, 'cargo': cargo, 'data_admissao': format_date_safe(data_admissao), 'empresa_id': empresa_id, 'status': 'Ativo'}
         employee_id = self.supabase_ops.insert_row("employees", new_data)
         if employee_id:
             self.load_data()
@@ -284,8 +343,8 @@ class EmployeeManager:
         
         new_data = {
             'funcionario_id': funcionario_id,
-            'data_aso': aso_data.get('data_aso').strftime("%Y-%m-%d"),
-            'vencimento': aso_data.get('vencimento').strftime("%Y-%m-%d") if aso_data.get('vencimento') else None,
+            'data_aso': format_date_safe(aso_data.get('data_aso')),
+            'vencimento': format_date_safe(aso_data.get('vencimento')),
             'arquivo_id': str(aso_data.get('arquivo_id')),
             'arquivo_hash': arquivo_hash or '',
             'riscos': aso_data.get('riscos', 'N/A'),
@@ -319,26 +378,26 @@ class EmployeeManager:
                 modulo = 'SEP'
             elif norma == 'NR-10' and modulo in ['N/A', '', 'nan']:
                 modulo = 'Básico'
+
+            new_data = {
+                'funcionario_id': funcionario_id,
+                'data': format_date_safe(training_data.get('data')),
+                'vencimento': format_date_safe(training_data.get('vencimento')),
+                'norma': norma,
+                'modulo': modulo,
+                'status': "Válido",
+                'anexo': str(training_data.get('anexo')),
+                'arquivo_hash': training_data.get('arquivo_hash', ''),
+                'tipo_treinamento': str(training_data.get('tipo_treinamento', 'formação')),
+                'carga_horaria': str(training_data.get('carga_horaria', '0'))
+            }
+                    
+            # 3. TENTA SALVAR
+            logger.info(f"Salvando treinamento: {norma} - {modulo} para funcionário {funcionario_id}")
+            training_id = self.supabase_ops.insert_row("trainings", new_data)
             
-                    new_data = {
-                        'funcionario_id': funcionario_id,
-                        'data': training_data.get('data').strftime("%Y-%m-%d"),
-                        'vencimento': training_data.get('vencimento').strftime("%Y-%m-%d"),
-                        'norma': norma,
-                        'modulo': modulo,
-                        'status': "Válido",
-                        'anexo': str(training_data.get('anexo')),
-                        'arquivo_hash': training_data.get('arquivo_hash', ''),
-                        'tipo_treinamento': str(training_data.get('tipo_treinamento', 'formação')),
-                        'carga_horaria': str(training_data.get('carga_horaria', '0'))
-                    }
-                    
-                    # 3. TENTA SALVAR
-                    logger.info(f"Salvando treinamento: {norma} - {modulo} para funcionário {funcionario_id}")
-                    training_id = self.supabase_ops.insert_row("trainings", new_data)
-                    
-                    # 4. VERIFICA SE DEU CERTO
-                    if training_id:
+            # 4. VERIFICA SE DEU CERTO
+            if training_id:
                         # ✅ SUCESSO - registra no log de auditoria
                         log_action("ADD_TRAINING", {
                             "training_id": training_id,
@@ -519,16 +578,21 @@ class EmployeeManager:
         data = training_data.get('data')
         vencimento = training_data.get('vencimento')
         
-        # 2. VALIDAÇÃO 1: Campos obrigatórios
-        if not all([norma, data, vencimento]):
-            return False, "❌ Faltam campos obrigatórios"
+        # 2. VALIDAÇÃO 1: Campos obrigatórios e tipo correto
+        if not all([norma, 
+                   isinstance(data, (date, datetime)), 
+                   isinstance(vencimento, (date, datetime))]):
+            return False, "❌ Faltam campos obrigatórios ou datas inválidas"
         
         # 3. VALIDAÇÃO 2: Data não pode ser futura
-        if data > date.today():
-            return False, f"❌ Data de realização ({data.strftime('%d/%m/%Y')}) não pode ser futura"
-        
-        # 4. VALIDAÇÃO 3: Vencimento após realização
-        if vencimento <= data:
+        hoje = date.today()
+        if isinstance(data, datetime):
+            data = data.date()
+            if data is not None and data > hoje:
+                return False, f"❌ Data de realização ({format_date_safe(data, '%d/%m/%Y')}) não pode ser futura"        # 4. VALIDAÇÃO 3: Vencimento após realização
+        if isinstance(vencimento, datetime):
+            vencimento = vencimento.date()
+        if vencimento is not None and data is not None and vencimento <= data:
             return False, f"❌ Vencimento deve ser após a data de realização"
         
         # 5. VALIDAÇÃO 4: Carga horária (usa função existente)
@@ -578,10 +642,7 @@ class EmployeeManager:
         return None
 
     def delete_aso(self, aso_id: str, file_url: str):
-        """
-        Deleta permanentemente um registro de ASO e seu arquivo, e registra a ação.
-        """
-        # Coleta informações para o log ANTES de deletar
+        """Deleta permanentemente um registro de ASO e seu arquivo."""
         aso_info = self.aso_df[self.aso_df['id'] == aso_id]
         if not aso_info.empty:
             details = {
@@ -594,20 +655,23 @@ class EmployeeManager:
             }
             log_action("DELETE_ASO", details)
 
-        # Continua com a lógica de exclusão
+        # ✅ USAR SUPABASE STORAGE
         if file_url and pd.notna(file_url):
-            self.api_manager.delete_file_by_url(file_url)
+            try:
+                from operations.supabase_storage import SupabaseStorageManager
+                storage_manager = SupabaseStorageManager(self.unit_id)
+                storage_manager.delete_file_by_url(file_url)
+            except Exception as e:
+                logger.error(f"Erro ao deletar arquivo: {e}")
         
         if self.supabase_ops.delete_row("asos", aso_id):
+            st.cache_data.clear()
             self.load_data()
             return True
         return False
 
     def delete_training(self, training_id: str, file_url: str):
-        """
-        Deleta permanentemente um registro de treinamento e seu arquivo, e registra a ação.
-        """
-        # Coleta informações para o log ANTES de deletar
+        """Deleta permanentemente um registro de treinamento e seu arquivo."""
         training_info = self.training_df[self.training_df['id'] == training_id]
         if not training_info.empty:
             details = {
@@ -620,11 +684,17 @@ class EmployeeManager:
             }
             log_action("DELETE_TRAINING", details)
 
-        # Continua com a lógica de exclusão
+        # ✅ USAR SUPABASE STORAGE
         if file_url and pd.notna(file_url):
-            self.api_manager.delete_file_by_url(file_url)
+            try:
+                from operations.supabase_storage import SupabaseStorageManager
+                storage_manager = SupabaseStorageManager(self.unit_id)
+                storage_manager.delete_file_by_url(file_url)
+            except Exception as e:
+                logger.error(f"Erro ao deletar arquivo: {e}")
 
         if self.supabase_ops.delete_row("trainings", training_id):
+            st.cache_data.clear()
             self.load_data()
             return True
         return False

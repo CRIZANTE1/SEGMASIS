@@ -9,7 +9,7 @@ import tempfile
 import os
 from operations.audit_logger import log_action
 from operations.cached_loaders import load_all_unit_data
-from operations.supabase_storage import SupabaseStorageManager
+from managers.supabase_storage import SupabaseStorageManager
 from operations.file_hash import calcular_hash_arquivo, verificar_hash_seguro
 
 logger = logging.getLogger('segsisone_app.company_docs_manager')
@@ -28,16 +28,28 @@ class CompanyDocsManager:
         """Faz o upload de um arquivo para o Supabase Storage."""
         if not self.unit_id:
             st.error("O ID da unidade não está definido.")
+            logger.error("Tentativa de upload sem unit_id definido")
             return None
         
-        result = self.storage_manager.upload_file(
-            file_content=arquivo.getvalue(),
-            filename=novo_nome,
-            doc_type='doc_empresa',
-            content_type=arquivo.type
-        )
-        
-        return result['url'] if result else None
+        try:
+            result = self.storage_manager.upload_file(
+                file_content=arquivo.getvalue(),
+                filename=novo_nome,
+                doc_type='doc_empresa',
+                content_type=arquivo.type
+            )
+            
+            if result and 'url' in result:
+                return result['url']
+            else:
+                logger.error(f"Upload falhou: resultado = {result}")
+                st.error("Falha no upload do documento")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Erro ao fazer upload: {e}", exc_info=True)
+            st.error(f"Erro ao fazer upload: {str(e)}")
+            return None
 
     @property
     def pdf_analyzer(self):
@@ -185,9 +197,13 @@ class CompanyDocsManager:
             log_action("DELETE_COMPANY_DOC", details)
 
         if file_url and pd.notna(file_url):
-            self.storage_manager.delete_file_by_url(file_url)
+            try:
+                self.storage_manager.delete_file_by_url(file_url)
+            except Exception as e:
+                logger.error(f"Erro ao deletar arquivo do storage: {e}")
         
         if self.supabase_ops.delete_row("documentos_empresa", doc_id):
+            st.cache_data.clear()
             self.load_company_data()
             return True
         return False

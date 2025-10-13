@@ -19,7 +19,7 @@ if root_dir not in sys.path:
 
 from operations.employee import EmployeeManager
 from operations.company_docs import CompanyDocsManager
-from gdrive.matrix_manager import MatrixManager
+from managers.matrix_manager import MatrixManager
 
 def get_smtp_config():
     """
@@ -77,12 +77,28 @@ def _get_empty_categories():
 
 def categorize_expirations_for_unit(employee_manager: EmployeeManager, docs_manager: CompanyDocsManager):
     """
-    ✅ CORRIGIDO: Categoriza os vencimentos com tratamento robusto de erros
+    Categoriza e organiza os vencimentos por tipo e prazo.
+    
+    Args:
+        employee_manager: Gerenciador de funcionários (treinamentos e ASOs)
+        docs_manager: Gerenciador de documentos da empresa
+        
+    Returns:
+        dict: Dicionário com DataFrames categorizados por tipo e prazo de vencimento
     """
     try:
         today = date.today()
         
-        # ✅ Verificações de segurança
+        # ✅ VALIDAÇÃO CRÍTICA: Verifica se os managers foram inicializados
+        if not isinstance(employee_manager, EmployeeManager):
+            logger.error("employee_manager não é uma instância válida de EmployeeManager")
+            return _get_empty_categories()
+        
+        if not isinstance(docs_manager, CompanyDocsManager):
+            logger.error("docs_manager não é uma instância válida de CompanyDocsManager")
+            return _get_empty_categories()
+        
+        # ✅ Verificações de carregamento de dados
         if not employee_manager.data_loaded_successfully:
             logger.warning("Dados do EmployeeManager não foram carregados")
             return _get_empty_categories()
@@ -91,13 +107,24 @@ def categorize_expirations_for_unit(employee_manager: EmployeeManager, docs_mana
             logger.warning("Dados do CompanyDocsManager não foram carregados")
             return _get_empty_categories()
         
+        # ✅ Verificações de DataFrames requeridos
         if employee_manager.companies_df.empty:
             logger.warning("DataFrame de empresas está vazio")
             return _get_empty_categories()
             
+        # ✅ Filtra apenas empresas ativas
         active_companies = employee_manager.companies_df[
             employee_manager.companies_df['status'].str.lower() == 'ativo'
         ].copy()
+        
+        # ✅ Log de diagnóstico
+        logger.info(
+            f"Categorização iniciada. "
+            f"Empresas ativas: {len(active_companies)}, "
+            f"ASOs: {len(employee_manager.aso_df)}, "
+            f"Treinamentos: {len(employee_manager.training_df)}, "
+            f"Documentos: {len(docs_manager.docs_df)}"
+        )
         
         if active_companies.empty:
             logger.info("Nenhuma empresa ativa encontrada")

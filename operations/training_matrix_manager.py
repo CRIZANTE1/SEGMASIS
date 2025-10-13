@@ -2,82 +2,203 @@ import streamlit as st
 import pandas as pd
 import json
 import re
-import logging 
+import logging
+import tempfile
+import os
+from typing import Optional, Tuple, List
 from operations.supabase_operations import SupabaseOperations
 from AI.api_Operation import PDFQA
-from fuzzywuzzy import process 
+from fuzzywuzzy import process
 
 logger = logging.getLogger('segsisone_app.training_matrix_manager')
 
 class MatrixManager:
     def __init__(self, unit_id: str):
-        """Inicializa o gerenciador da Matriz de Treinamentos para uma unidade."""
-        self.supabase_ops = SupabaseOperations(unit_id)
+        """
+        Inicializa o gerenciador da Matriz de Treinamentos para uma unidade.
+        
+        Args:
+            unit_id: ID da unidade operacional
+        """
+        # ✅ CORREÇÃO: Validação de entrada
+        if not unit_id:
+            raise ValueError("unit_id não pode ser vazio")
+        
         self.unit_id = unit_id
+        self.supabase_ops = SupabaseOperations(unit_id)
+        
+        # Definição de colunas esperadas
         self.columns_functions = ['id', 'nome_funcao', 'descricao']
         self.columns_matrix = ['id', 'id_funcao', 'norma_obrigatoria']
+        
+        # Cache interno
         self._functions_df = None
         self._matrix_df = None
-        self.pdf_analyzer = PDFQA()
+        
+        # Inicializa analisador de PDF
+        try:
+            self.pdf_analyzer = PDFQA()
+            logger.info(f"MatrixManager inicializado para unit_id: ...{unit_id[-6:]}")
+        except Exception as e:
+            logger.error(f"Erro ao inicializar PDFQA: {e}")
+            raise
 
     @property
-    def functions_df(self):
-        """Carrega o DataFrame de funções sob demanda."""
+    def functions_df(self) -> pd.DataFrame:
+        """
+        Carrega o DataFrame de funções sob demanda.
+        
+        Returns:
+            DataFrame com as funções cadastradas
+        """
         if self._functions_df is None:
             self._load_functions_data()
-        return self._functions_df
+        return self._functions_df if self._functions_df is not None else pd.DataFrame(columns=self.columns_functions)
 
     @property
-    def matrix_df(self):
-        """Carrega o DataFrame da matriz sob demanda."""
+    def matrix_df(self) -> pd.DataFrame:
+        """
+        Carrega o DataFrame da matriz sob demanda.
+        
+        Returns:
+            DataFrame com os mapeamentos de treinamentos
+        """
         if self._matrix_df is None:
             self._load_matrix_data()
-        return self._matrix_df
+        return self._matrix_df if self._matrix_df is not None else pd.DataFrame(columns=self.columns_matrix)
 
     def _load_functions_data(self):
         """Carrega os dados da tabela 'funcoes'."""
-        self._functions_df = self.supabase_ops.get_table_data("funcoes")
+        try:
+            self._functions_df = self.supabase_ops.get_table_data("funcoes")
+            
+            # ✅ CORREÇÃO: Validação do DataFrame carregado
+            if self._functions_df is None:
+                logger.warning("get_table_data retornou None para 'funcoes'")
+                self._functions_df = pd.DataFrame(columns=self.columns_functions)
+            elif self._functions_df.empty:
+                logger.info("Tabela 'funcoes' está vazia")
+            else:
+                logger.debug(f"Carregadas {len(self._functions_df)} funções")
+                
+        except Exception as e:
+            logger.error(f"Erro ao carregar funções: {e}")
+            self._functions_df = pd.DataFrame(columns=self.columns_functions)
         
     def _load_matrix_data(self):
         """Carrega os dados da tabela 'matriz_treinamentos'."""
-        self._matrix_df = self.supabase_ops.get_table_data("matriz_treinamentos")
+        try:
+            self._matrix_df = self.supabase_ops.get_table_data("matriz_treinamentos")
+            
+            # ✅ CORREÇÃO: Validação do DataFrame carregado
+            if self._matrix_df is None:
+                logger.warning("get_table_data retornou None para 'matriz_treinamentos'")
+                self._matrix_df = pd.DataFrame(columns=self.columns_matrix)
+            elif self._matrix_df.empty:
+                logger.info("Tabela 'matriz_treinamentos' está vazia")
+            else:
+                logger.debug(f"Carregados {len(self._matrix_df)} mapeamentos")
+                
+        except Exception as e:
+            logger.error(f"Erro ao carregar matriz: {e}")
+            self._matrix_df = pd.DataFrame(columns=self.columns_matrix)
 
-    def add_function(self, name, description):
-        """Adiciona uma função usando Supabase."""
+    def add_function(self, name: str, description: str) -> tuple[str | None, str]:
+        """
+        Adiciona uma função usando Supabase.
+        
+        Args:
+            name: Nome da função
+            description: Descrição da função
+            
+        Returns:
+            tuple: (id da função criada ou None, mensagem de sucesso/erro)
+        """
+        # ✅ Validações adicionais
+        if not name or len(name.strip()) < 3:
+            return None, "Nome da função inválido (mínimo 3 caracteres)"
+            
+        if not description:
+            description = "Sem descrição"
+        
+        # ✅ Verifica duplicata com case insensitive
         if not self.functions_df.empty and name.lower() in self.functions_df['nome_funcao'].str.lower().values:
             return None, f"A função '{name}' já existe."
         
         new_data = {
-            'nome_funcao': name,
-            'descricao': description
+            'nome_funcao': name.strip(),
+            'descricao': description.strip()
         }
         
-        result = self.supabase_ops.insert_row("funcoes", new_data)
-        if result:
-            self._functions_df = None  # Invalida o cache
-            return result['id'], "Função adicionada com sucesso."
-        return None, "Falha ao adicionar função."
+        try:
+            result = self.supabase_ops.insert_row("funcoes", new_data)
+            if result:
+                # ✅ Invalida AMBOS os caches
+                self._functions_df = None
+                st.cache_data.clear()
+                
+                # ✅ Log da operação
+                logger.info(f"Função '{name}' adicionada com sucesso.")
+                return result['id'], "Função adicionada com sucesso."
+                
+            return None, "Falha ao adicionar função."
+            
+        except Exception as e:
+            logger.error(f"Erro ao adicionar função: {e}")
+            return None, f"Erro ao adicionar função: {str(e)}"
 
-    def add_training_to_function(self, function_id, required_norm):
-        """Adiciona treinamento à função usando Supabase."""
+    def add_training_to_function(self, function_id: str, required_norm: str) -> tuple[str | None, str]:
+        """
+        Adiciona treinamento à função usando Supabase.
+        
+        Args:
+            function_id: ID da função
+            required_norm: Nome da norma obrigatória
+            
+        Returns:
+            tuple: (id do mapeamento criado ou None, mensagem de sucesso/erro)
+        """
+        # ✅ Validações adicionais
+        if not function_id:
+            return None, "ID da função não fornecido"
+            
+        if not required_norm or len(required_norm.strip()) < 2:
+            return None, "Nome da norma inválido"
+        
+        # ✅ Verifica se a função existe
+        if not self.functions_df.empty and str(function_id) not in self.functions_df['id'].astype(str).values:
+            return None, f"A função com ID {function_id} não existe"
+        
+        # ✅ Verifica duplicata com case insensitive
         if not self.matrix_df.empty:
             existing = self.matrix_df[
                 (self.matrix_df['id_funcao'] == str(function_id)) & 
-                (self.matrix_df['norma_obrigatoria'] == required_norm)
+                (self.matrix_df['norma_obrigatoria'].str.lower() == required_norm.lower())
             ]
             if not existing.empty:
                 return None, "Este treinamento já está mapeado para esta função."
         
         new_data = {
             'id_funcao': str(function_id),
-            'norma_obrigatoria': required_norm
+            'norma_obrigatoria': required_norm.strip()
         }
         
-        result = self.supabase_ops.insert_row("matriz_treinamentos", new_data)
-        if result:
-            self._matrix_df = None  # Invalida o cache
-            return result['id'], "Treinamento mapeado com sucesso."
-        return None, "Falha ao mapear treinamento."
+        try:
+            result = self.supabase_ops.insert_row("matriz_treinamentos", new_data)
+            if result:
+                # ✅ Invalida AMBOS os caches
+                self._matrix_df = None
+                st.cache_data.clear()
+                
+                # ✅ Log da operação
+                logger.info(f"Treinamento '{required_norm}' mapeado para função {function_id}")
+                return result['id'], "Treinamento mapeado com sucesso."
+                
+            return None, "Falha ao mapear treinamento."
+            
+        except Exception as e:
+            logger.error(f"Erro ao mapear treinamento: {e}")
+            return None, f"Erro ao mapear treinamento: {str(e)}"
 
     def get_required_trainings_for_function(self, function_name: str) -> list:
         """Retorna treinamentos obrigatórios para uma função."""
@@ -186,9 +307,15 @@ class MatrixManager:
     def update_function_mappings(self, function_id, new_required_norms: list):
         """Atualiza mapeamentos de uma função."""
         try:
-            function_name = self.functions_df.loc[
-                self.functions_df['id'] == function_id, 'nome_funcao'
-            ].iloc[0]
+            # ✅ CORREÇÃO: Acesso seguro ao nome da função
+            function_query = self.functions_df[self.functions_df['id'] == function_id]
+            if function_query.empty:
+                return False, f"Função com ID {function_id} não encontrada"
+                
+            function_name = function_query['nome_funcao'].iloc[0]
+            if not function_name:
+                return False, "Nome da função não encontrado"
+                
             current_mappings = self.get_required_trainings_for_function(function_name)
 
             to_add = [norm for norm in new_required_norms if norm not in current_mappings]
@@ -215,61 +342,174 @@ class MatrixManager:
         except Exception as e:
             return False, f"Erro ao atualizar mapeamentos: {e}"
 
-    def find_closest_function(self, employee_cargo: str, score_cutoff: int = 90) -> str | None:
-        """Encontra a função mais próxima usando fuzzy matching."""
-        if self.functions_df.empty or not employee_cargo:
-            return None
-            
-        function_names = self.functions_df['nome_funcao'].dropna().tolist()
-        if not function_names:
-            return None
-
-        best_match = process.extractOne(employee_cargo, function_names)
+    def find_closest_function(
+        self, 
+        employee_cargo: str, 
+        score_cutoff: int = 90
+    ) -> Optional[str]:
+        """
+        Encontra a função mais próxima usando fuzzy matching.
         
-        if best_match:
+        Args:
+            employee_cargo: Cargo do funcionário
+            score_cutoff: Pontuação mínima para aceitar match (0-100)
+            
+        Returns:
+            Nome da função mais próxima ou None
+        """
+        # ✅ CORREÇÃO: Validações
+        if not employee_cargo or not isinstance(employee_cargo, str):
+            logger.debug("Cargo do funcionário não fornecido ou inválido")
+            return None
+        
+        try:
+            # Garante que temos um DataFrame válido
+            df = self.functions_df
+            if df.empty or 'nome_funcao' not in df.columns:
+                logger.debug("DataFrame de funções está vazio ou sem coluna nome_funcao")
+                return None
+            
+            # Obtém lista de funções
+            function_names = df['nome_funcao'].dropna().tolist()
+            if not function_names:
+                logger.debug("Nenhuma função disponível para matching")
+                return None
+
+            # Faz o fuzzy matching
+            best_match = process.extractOne(employee_cargo, function_names)
+            
+            if not best_match:
+                logger.debug(f"Nenhum match encontrado para '{employee_cargo}'")
+                return None
+            
             match_name, score = best_match
-            logger.info(f"Fuzzy match para '{employee_cargo}': '{match_name}' com pontuação {score}.")
+            logger.info(f"Fuzzy match para '{employee_cargo}': '{match_name}' (score: {score})")
             
             if score >= score_cutoff:
-                logger.info(f"Pontuação {score} >= {score_cutoff}. Aceitando a correspondência.")
+                logger.info(f"Match aceito (score {score} >= {score_cutoff})")
                 return match_name
             else:
-                logger.info(f"Pontuação {score} < {score_cutoff}. Rejeitando a correspondência.")
+                logger.info(f"Match rejeitado (score {score} < {score_cutoff})")
                 return None
+                
+        except Exception as e:
+            logger.error(f"Erro no fuzzy matching: {e}")
+            return None
         
-        return None
+    def get_training_recommendations_for_function(
+        self, 
+        function_name: str, 
+        nr_analyzer
+    ) -> Tuple[Optional[List[dict]], str]:
+        """
+        Obtém recomendações de treinamentos usando IA.
         
-    def get_training_recommendations_for_function(self, function_name: str, nr_analyzer):
-        """Obtém recomendações de treinamentos usando IA."""
+        Args:
+            function_name: Nome da função
+            nr_analyzer: Instância do NRAnalyzer para busca semântica
+            
+        Returns:
+            tuple: (lista de recomendações, mensagem de status)
+        """
+        # ✅ CORREÇÃO: Validações
+        if not function_name or not isinstance(function_name, str):
+            return None, "Nome da função não fornecido ou inválido"
+        
+        if not nr_analyzer:
+            return None, "Analisador de NR não fornecido"
+        
         prompt_template = """
-        **Persona:** Você é um Engenheiro de Segurança do Trabalho Sênior...
+        **Persona:** Você é um Engenheiro de Segurança do Trabalho Sênior especializado em análise de riscos ocupacionais.
+
+        **Contexto:** Base de Conhecimento Normativa
+        ---
+        {relevant_knowledge}
+        ---
+
+        **Tarefa:** Para a função de "{function_name}", identifique os treinamentos de segurança obrigatórios com base nas Normas Regulamentadoras brasileiras.
+
         **Estrutura JSON de Saída Obrigatória:**
-```json
+        ```json
         [
           {{
-            "treinamento_recomendado": "NR-10 BÁSICO",
-            "justificativa_normativa": "A função envolve interação com instalações elétricas, conforme NR-10."
+            "treinamento_recomendado": "NR-10",
+            "justificativa_normativa": "A função envolve interação com instalações elétricas, conforme item 10.8.1 da NR-10."
           }}
         ]
-    **Importante:** Responda APENAS com o bloco de código JSON...
-    """
+        ```
+
+        **Importante:** 
+        1. Responda APENAS com o bloco de código JSON
+        2. Use nomenclatura oficial das NRs
+        3. Base as justificativas nos trechos da Base de Conhecimento fornecida
+        4. Liste apenas treinamentos realmente obrigatórios para a função
+        """
+        
         try:
+            # Busca conhecimento relevante
             query = f"Riscos, atividades e treinamentos de segurança obrigatórios para a função de {function_name}"
+            logger.info(f"Buscando conhecimento para função '{function_name}'")
+            
             relevant_knowledge = nr_analyzer._find_semantically_relevant_chunks(query, top_k=10)
-            final_prompt = prompt_template.format(function_name=function_name, relevant_knowledge=relevant_knowledge)
-            response_text, _ = self.pdf_analyzer.answer_question([], final_prompt, task_type='audit')
+            
+            if "indisponível" in relevant_knowledge.lower() or "erro" in relevant_knowledge.lower():
+                return None, "Base de conhecimento indisponível"
+            
+            # Monta o prompt final
+            final_prompt = prompt_template.format(
+                function_name=function_name,
+                relevant_knowledge=relevant_knowledge
+            )
+            
+            # Chama a IA
+            logger.info("Gerando recomendações com IA...")
+            response_text, _ = self.pdf_analyzer.answer_question(
+                [], 
+                final_prompt, 
+                task_type='audit'
+            )
             
             if not response_text:
                 return None, "A IA não retornou uma resposta."
 
+            # ✅ CORREÇÃO: Parse mais robusto
             try:
-                match = re.search(r'```json\s*(\[.*\])\s*```', response_text, re.DOTALL)
-                json_str = match.group(1) if match else re.search(r'(\[.*\])', response_text, re.DOTALL).group(0)
+                # Tenta extrair JSON com marcadores
+                json_match = re.search(r'```json\s*(\[.*?\])\s*```', response_text, re.DOTALL)
+                if not json_match:
+                    # Tenta sem marcadores
+                    json_match = re.search(r'(\[.*?\])', response_text, re.DOTALL)
+                
+                if not json_match:
+                    logger.warning(f"JSON não encontrado na resposta: {response_text[:200]}")
+                    return None, f"A resposta da IA não estava no formato esperado."
+                
+                json_str = json_match.group(1) if json_match.lastindex else json_match.group(0)
                 recommendations = json.loads(json_str)
-                return recommendations, "Recomendações geradas com sucesso."
+                
+                # Valida estrutura
+                if not isinstance(recommendations, list):
+                    return None, "Formato de recomendações inválido"
+                
+                # Valida cada recomendação
+                valid_recs = []
+                for rec in recommendations:
+                    if isinstance(rec, dict) and 'treinamento_recomendado' in rec and 'justificativa_normativa' in rec:
+                        valid_recs.append(rec)
+                
+                if not valid_recs:
+                    return None, "Nenhuma recomendação válida foi gerada"
+                
+                logger.info(f"Geradas {len(valid_recs)} recomendações válidas")
+                return valid_recs, "Recomendações geradas com sucesso"
 
-            except (json.JSONDecodeError, AttributeError):
-                return None, f"A resposta da IA não era um JSON válido. Resposta: '{response_text}'"
-
+            except json.JSONDecodeError as e:
+                logger.error(f"Erro ao fazer parse do JSON: {e}")
+                return None, "Erro ao interpretar a resposta da IA"
+            except Exception as e:
+                logger.error(f"Erro ao processar recomendações: {e}", exc_info=True)
+                return None, f"Erro ao processar recomendações: {str(e)}"
+                
         except Exception as e:
-            return None, f"Ocorreu um erro ao obter recomendações: {e}"
+            logger.error(f"Erro ao obter recomendações: {e}", exc_info=True)
+            return None, f"Erro ao obter recomendações: {str(e)}"

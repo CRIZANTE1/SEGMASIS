@@ -3,7 +3,7 @@ import os
 import tempfile
 import yaml
 import logging 
-from operations.supabase_storage import SupabaseStorageManager
+from managers.supabase_storage import SupabaseStorageManager
 
 logger = logging.getLogger('segsisone_app.api_manager')
 
@@ -98,13 +98,18 @@ class GoogleApiManager:
     
     def create_folder(self, name: str, parent_folder_id: str = None):
         """
-        [LEGACY] Folders não são necessários no Supabase Storage.
-        Retorna um ID dummy para compatibilidade.
+        [DEPRECATED] Folders não são mais usados com Supabase Storage.
+        Este método foi mantido apenas para compatibilidade com código legado.
         """
-        logger.warning("create_folder() chamado, mas folders não são usados no Supabase Storage")
-        return f"supabase_virtual_folder_{name}"
-    
+        logger.error(f"create_folder() foi chamado para '{name}'. Este método está obsoleto e não deve ser usado.")
+        st.warning("⚠️ Tentativa de criar pasta no Google Drive detectada. Este recurso foi desativado.")
+        return None
+
     def move_file_to_folder(self, file_id: str, folder_id: str):
-        """[LEGACY] Não implementado no Supabase Storage."""
-        logger.warning("move_file_to_folder() não implementado no Supabase Storage")
-        pass
+        """
+        [DEPRECATED] Não implementado no Supabase Storage.
+        Este método foi mantido apenas para compatibilidade com código legado.
+        """
+        logger.error(f"move_file_to_folder() foi chamado. Este método está obsoleto.")
+        st.warning("⚠️ Tentativa de mover arquivo no Google Drive detectada. Este recurso foi desativado.")
+        return False

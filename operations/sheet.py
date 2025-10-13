@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import logging
 import random
-from gdrive.google_api_manager import GoogleApiManager
+from managers.google_api_manager import GoogleApiManager
 from gspread.exceptions import WorksheetNotFound
 import gspread
 
