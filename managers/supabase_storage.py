@@ -14,18 +14,11 @@ class SupabaseStorageManager:
     def __init__(self, unit_id: str = None):
         """
         Inicializa o gerenciador de storage.
-
+        
         Args:
             unit_id: ID da unidade operacional (usado para organizar arquivos)
         """
-        try:
-            self.supabase = get_cached_supabase_client()
-            if not self.supabase:
-                raise ValueError("Cliente Supabase não inicializado")
-        except Exception as e:
-            logger.error(f"Falha ao inicializar SupabaseStorageManager: {e}")
-            raise RuntimeError(f"Supabase não disponível: {e}")
-
+        self.supabase = get_cached_supabase_client()
         self.unit_id = unit_id
         logger.info(f"SupabaseStorageManager inicializado para unit_id: {unit_id}")
     
@@ -113,19 +106,20 @@ class SupabaseStorageManager:
             URL assinada do arquivo
         """
         try:
+            # Tenta obter URL pública primeiro (se o bucket for público)
             public_url = self.supabase.storage.from_(bucket_name).get_public_url(file_path)
-            if public_url and isinstance(public_url, str):
+            
+            if public_url:
                 return public_url
-        except Exception as e:
-            logger.warning(f"Bucket não é público, gerando URL assinada: {e}")
-
-        # Sempre gera URL assinada como fallback
-        try:
+            
+            # Se não for público, gera URL assinada
             signed_url = self.supabase.storage.from_(bucket_name).create_signed_url(
                 path=file_path,
                 expires_in=expires_in
             )
+            
             return signed_url.get('signedURL', '')
+            
         except Exception as e:
             logger.error(f"❌ Erro ao gerar URL do arquivo: {e}")
             return ""

@@ -504,8 +504,9 @@ def show_admin_page():
                     all_users_df,
                     column_config={"delete_action": st.column_config.CheckboxColumn("Excluir?")},
                     disabled=["email", "nome", "role", "unidade_associada"],
-                    width='stretch', # <-- CORREÇÃO
-                    hide_index=True, key="user_editor"
+                    use_container_width=True,
+                    hide_index=True,
+                    key="user_editor"
                 )
                 
                 users_to_delete = edited_df[edited_df['delete_action']]
