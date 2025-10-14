@@ -12,7 +12,7 @@ A qualidade das respostas geradas pelos modelos Gemini depende diretamente da qu
 
 ## 2. Catálogo de Prompts Principais
 
-### Prompt 1: Extração de Dados de ASO (Gemini 1.5 Flash)
+### Prompt 1: Extração de Dados de ASO (Gemini 2.5 Flash)
 
 - **Módulo:** `operations/employee.py`
 - **Função:** `analyze_aso_pdf()`
