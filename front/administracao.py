@@ -3,9 +3,6 @@ import pandas as pd
 import logging
 from datetime import date
 from managers.matrix_manager import MatrixManager as GlobalMatrixManager
-
-logger = logging.getLogger('segsisone_app.administracao')
-
 from operations.employee import EmployeeManager
 from operations.company_docs import CompanyDocsManager
 from auth.auth_utils import check_permission
@@ -13,6 +10,8 @@ from ui.metrics import display_minimalist_metrics
 from managers.google_api_manager import GoogleApiManager
 from operations.audit_logger import log_action
 from operations.cached_loaders import load_all_unit_data
+
+logger = logging.getLogger('segsisone_app.administracao')
 
 @st.cache_data(ttl=300)
 def load_aggregated_data():
