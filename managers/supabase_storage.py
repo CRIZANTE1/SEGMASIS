@@ -355,7 +355,7 @@ class SupabaseUploader:
             progress_bar.progress(30, text="Determinando tipo de documento...")
             
             # Determina o tipo de documento pelo nome
-            doc_type = self._infer_doc_type(filename)
+            doc_type = GoogleApiManager._infer_doc_type(filename)
             
             progress_bar.progress(50, text="Enviando para o servidor...")
             
@@ -398,17 +398,4 @@ class SupabaseUploader:
         
         return self.storage_manager.delete_file_by_url(file_url)
     
-    def _infer_doc_type(self, filename: str) -> str:
-        """Infere o tipo de documento pelo nome do arquivo."""
-        filename_lower = filename.lower()
-        
-        if 'aso' in filename_lower:
-            return 'aso'
-        elif 'training' in filename_lower or 'treinamento' in filename_lower:
-            return 'treinamento'
-        elif 'epi' in filename_lower:
-            return 'epi'
-        elif any(doc in filename_lower for doc in ['pgr', 'pcmso', 'ppr', 'pca']):
-            return 'doc_empresa'
-        
-        return 'aso'  # Default
+    

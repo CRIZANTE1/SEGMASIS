@@ -4,11 +4,13 @@ import pandas as pd
 from supabase import Client, create_client
 from managers.supabase_config import get_cached_supabase_client
 
+from postgrest.types import APIResponse
+
 logger = logging.getLogger(__name__)
 
 # Tipo para dicionários de dados genéricos
 DataDict = Dict[str, Any]
-SupabaseResponse = Any  # Tipo para respostas do Supabase
+SupabaseResponse = APIResponse  # Tipo para respostas do Supabase
 
 def safe_get_data(response: SupabaseResponse) -> List[Dict[str, Any]]:
     """Extrai dados de uma resposta do Supabase de forma segura."""

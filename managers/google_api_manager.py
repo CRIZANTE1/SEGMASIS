@@ -42,7 +42,7 @@ class GoogleApiManager:
             filename = novo_nome if novo_nome else arquivo.name
             
             # Infere o tipo de documento
-            doc_type = self._infer_doc_type(filename)
+            doc_type = GoogleApiManager._infer_doc_type(filename)
             
             # Faz o upload
             result = self.storage_manager.upload_file(
@@ -78,7 +78,8 @@ class GoogleApiManager:
         
         return self.storage_manager.delete_file_by_url(file_url)
     
-    def _infer_doc_type(self, filename: str) -> str:
+    @staticmethod
+    def _infer_doc_type(filename: str) -> str:
         """Infere o tipo de documento pelo nome do arquivo."""
         filename_lower = filename.lower()
         

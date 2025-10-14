@@ -4,16 +4,20 @@ import json
 import tempfile
 import os
 import re
+import logging
 from operations.supabase_operations import SupabaseOperations
 from AI.api_Operation import PDFQA
 from operations.cached_loaders import load_epis_df
 from operations.file_hash import calcular_hash_arquivo, verificar_hash_seguro
+
+logger = logging.getLogger('segsisone_app.epi_manager')
 
 class EPIManager:
     def __init__(self, unit_id: str):
         self.supabase_ops = SupabaseOperations(unit_id)
         self.unit_id = unit_id
         self._pdf_analyzer = None
+        self.data_loaded_successfully = False
         self.load_epi_data()
 
     @property
@@ -23,11 +27,19 @@ class EPIManager:
         return self._pdf_analyzer
 
     def load_epi_data(self):
+        if not self.unit_id:
+            logger.error("unit_id não definido ao carregar EPIs")
+            self.epi_df = pd.DataFrame()
+            self.data_loaded_successfully = False
+            return
+            
         try:
             self.epi_df = load_epis_df(self.unit_id)
+            self.data_loaded_successfully = not self.epi_df.empty
         except Exception as e:
             st.error(f"Erro ao carregar dados de EPI: {str(e)}")
             self.epi_df = pd.DataFrame()
+            self.data_loaded_successfully = False
 
     def get_epi_by_employee(self, employee_id):
         """Retorna o registro mais recente para cada tipo de EPI."""
@@ -153,3 +165,317 @@ class EPIManager:
             return saved_ids
         
         return None
+
+    def delete_epi(self, epi_id: str, file_url: str):
+        """Deleta um registro de EPI e, se for o último, o arquivo associado."""
+        if not epi_id:
+            return False
+
+        # 1. Deleta o registro do EPI
+        if not self.supabase_ops.delete_row("fichas_epi", epi_id):
+            st.error("Falha ao deletar o registro do EPI.")
+            return False
+
+        # 2. Verifica se há outros EPIs usando o mesmo arquivo
+        if file_url and pd.notna(file_url):
+            outros_epis_com_mesmo_arquivo = self.epi_df[
+                (self.epi_df['arquivo_id'] == file_url) & 
+                (self.epi_df['id'] != epi_id)
+            ]
+            
+            # 3. Se não houver mais nenhum, deleta o arquivo
+            if outros_epis_com_mesmo_arquivo.empty:
+                try:
+                    from managers.supabase_storage import SupabaseStorageManager
+                    storage_manager = SupabaseStorageManager(self.unit_id)
+                    storage_manager.delete_file_by_url(file_url)
+                    logger.info(f"Arquivo {file_url} deletado pois era o último EPI associado.")
+                except Exception as e:
+                    logger.error(f"Erro ao deletar arquivo do storage: {e}")
+                    st.warning("Registro do EPI deletado, mas o arquivo no storage pode não ter sido removido.")
+
+        st.cache_data.clear()
+        self.load_epi_data()
+        return True
+    
+    def get_all_epis(self):
+        """Retorna todos os EPIs, opcionalmente filtrados."""
+        return self.epi_df
+    
+    def get_epi_details(self, epi_id):
+        """Retorna os detalhes de um EPI específico."""
+        if self.epi_df.empty:
+            return None
+        
+        details = self.epi_df[self.epi_df['id'] == epi_id]
+        return details.iloc[0].to_dict() if not details.empty else None
+    
+    def update_epi(self, epi_id, updates):
+        """Atualiza um registro de EPI."""
+        if not epi_id or not updates:
+            return False
+            
+        if self.supabase_ops.update_row("fichas_epi", epi_id, updates):
+            self.load_epi_data()
+            return True
+        return False
+    
+    def get_ca_details_from_api(self, ca_number: str):
+        """Busca detalhes de um CA em uma API externa."""
+        # Implementação futura
+        pass
+    
+    def get_ca_vencimento(self, ca: str):
+        """Busca a data de vencimento de um CA."""
+        # Implementação futura
+        pass
+    
+    def get_employee_epis_with_ca_vencimento(self, employee_id: str):
+        """Retorna os EPIs de um funcionário com o vencimento do CA."""
+        # Implementação futura
+        pass
+    
+    def get_expired_ca_epis(self):
+        """Retorna todos os EPIs com CA vencido."""
+        # Implementação futura
+        pass
+    
+    def get_epis_nearing_expiration(self, days=30):
+        """Retorna EPIs com CA próximo do vencimento."""
+        # Implementação futura
+        pass
+    
+    def get_epi_usage_history(self, ca: str):
+        """Retorna o histórico de uso de um EPI (por CA)."""
+        # Implementação futura
+        pass
+    
+    def get_last_epi_delivery_date(self, employee_id: str, epi_description: str):
+        """Retorna a data da última entrega de um EPI específico para um funcionário."""
+        # Implementação futura
+        pass
+    
+    def get_employees_without_epi(self, epi_description: str):
+        """Retorna funcionários que nunca receberam um EPI específico."""
+        # Implementação futura
+        pass
+    
+    def get_epi_stock_count(self, epi_description: str):
+        """Retorna a contagem de um EPI em estoque (simulado)."""
+        # Implementação futura
+        pass
+    
+    def add_epi_to_stock(self, epi_description: str, quantity: int):
+        """Adiciona EPI ao estoque (simulado)."""
+        # Implementação futura
+        pass
+    
+    def remove_epi_from_stock(self, epi_description: str, quantity: int):
+        """Remove EPI do estoque (simulado)."""
+        # Implementação futura
+        pass
+    
+    def get_epi_replacement_suggestions(self):
+        """Sugere a reposição de EPIs com base no uso e vencimento."""
+        # Implementação futura
+        pass
+    
+    def generate_epi_report(self, employee_id: str = None, start_date: str = None, end_date: str = None):
+        """Gera um relatório de entrega de EPIs."""
+        # Implementação futura
+        pass
+    
+    def get_epi_costs(self, start_date: str = None, end_date: str = None):
+        """Calcula os custos com EPI em um período."""
+        # Implementação futura
+        pass
+        
+    def get_most_used_epis(self, limit=10):
+        """Retorna os EPIs mais utilizados."""
+        # Implementação futura
+        pass
+    
+    def get_employees_with_most_epi_replacements(self, limit=10):
+        """Retorna os funcionários com mais trocas de EPI."""
+        # Implementação futura
+        pass
+    
+    def get_ca_validation_status(self, ca: str):
+        """Verifica se um CA é válido."""
+        # Implementação futura
+        pass
+    
+    def get_epi_image(self, ca: str):
+        """Retorna a imagem de um EPI a partir do CA."""
+        # Implementação futura
+        pass
+    
+    def get_related_epis(self, epi_description: str):
+        """Retorna EPIs relacionados a um EPI específico."""
+        # Implementação futura
+        pass
+    
+    def get_epi_provider_info(self, ca: str):
+        """Retorna informações do fornecedor de um EPI."""
+        # Implementação futura
+        pass
+    
+    def get_epi_technical_sheet(self, ca: str):
+        """Retorna a ficha técnica de um EPI."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_risk(self, risk: str):
+        """Retorna EPIs recomendados para um determinado risco."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_function(self, function: str):
+        """Retorna EPIs recomendados para uma determinada função."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_department(self, department: str):
+        """Retorna EPIs recomendados para um determinado setor."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_company(self, company_id: str):
+        """Retorna todos os EPIs de uma empresa."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_ca(self, ca: str):
+        """Retorna todos os registros de um EPI específico (por CA)."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_description(self, description: str):
+        """Retorna todos os registros de um EPI específico (por descrição)."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_date_range(self, start_date: str, end_date: str):
+        """Retorna todos os EPIs entregues em um período."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_employee_and_date_range(self, employee_id: str, start_date: str, end_date: str):
+        """Retorna os EPIs de um funcionário em um período."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_employee_and_description(self, employee_id: str, description: str):
+        """Retorna os registros de um EPI específico para um funcionário."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_employee_and_ca(self, employee_id: str, ca: str):
+        """Retorna os registros de um EPI específico (por CA) para um funcionário."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_employee_and_status(self, employee_id: str, status: str):
+        """Retorna os EPIs de um funcionário com um determinado status (ex: vencido)."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_status(self, status: str):
+        """Retorna todos os EPIs com um determinado status."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_provider(self, provider: str):
+        """Retorna todos os EPIs de um fornecedor."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_manufacturer(self, manufacturer: str):
+        """Retorna todos os EPIs de um fabricante."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_material(self, material: str):
+        """Retorna todos os EPIs de um determinado material."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_body_part(self, body_part: str):
+        """Retorna todos os EPIs para uma parte do corpo específica."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_standard(self, standard: str):
+        """Retorna todos os EPIs que atendem a uma norma específica."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_color(self, color: str):
+        """Retorna todos os EPIs de uma cor específica."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_size(self, size: str):
+        """Retorna todos os EPIs de um tamanho específico."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_gender(self, gender: str):
+        """Retorna todos os EPIs para um gênero específico."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_age_group(self, age_group: str):
+        """Retorna todos os EPIs para uma faixa etária específica."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_weight(self, weight: str):
+        """Retorna todos os EPIs para uma faixa de peso específica."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_height(self, height: str):
+        """Retorna todos os EPIs para uma faixa de altura específica."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_shoe_size(self, shoe_size: str):
+        """Retorna todos os EPIs para um tamanho de calçado específico."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_glove_size(self, glove_size: str):
+        """Retorna todos os EPIs para um tamanho de luva específico."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_helmet_size(self, helmet_size: str):
+        """Retorna todos os EPIs para um tamanho de capacete específico."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_clothing_size(self, clothing_size: str):
+        """Retorna todos os EPIs para um tamanho de roupa específico."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_protection_level(self, protection_level: str):
+        """Retorna todos os EPIs com um nível de proteção específico."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_certification(self, certification: str):
+        """Retorna todos os EPIs com uma certificação específica."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_application(self, application: str):
+        """Retorna todos os EPIs para uma aplicação específica."""
+        # Implementação futura
+        pass
+    
+    def get_epi_by_sector(self, sector: str):
+        """Retorna todos os EPIs para um setor específico."""
+        # Implementação futura
+        pass

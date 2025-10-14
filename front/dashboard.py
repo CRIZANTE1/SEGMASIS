@@ -1,7 +1,6 @@
 import streamlit as st
 from datetime import date
 import pandas as pd
-from fuzzywuzzy import process, fuzz
 import logging
 
 from auth.auth_utils import check_permission

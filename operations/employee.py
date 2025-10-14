@@ -70,6 +70,21 @@ class EmployeeManager:
         if self._pdf_analyzer is None: self._pdf_analyzer = PDFQA()
         return self._pdf_analyzer
 
+    def _infer_doc_type(self, filename: str) -> str:
+        """Infere o tipo de documento pelo nome do arquivo."""
+        filename_lower = filename.lower()
+        
+        if 'aso' in filename_lower:
+            return 'aso'
+        elif 'training' in filename_lower or 'treinamento' in filename_lower:
+            return 'treinamento'
+        elif 'epi' in filename_lower:
+            return 'epi'
+        elif any(doc in filename_lower for doc in ['pgr', 'pcmso', 'ppr', 'pca']):
+            return 'doc_empresa'
+        
+        return 'aso'  # Default
+
     def upload_documento_e_obter_link(self, arquivo, novo_nome: str):
         """
         Faz o upload de um arquivo usando Supabase Storage e retorna o link.
@@ -84,7 +99,7 @@ class EmployeeManager:
             storage_manager = SupabaseStorageManager(self.unit_id)
             
             # Determina o tipo de documento pelo nome
-            doc_type = self._infer_doc_type(novo_nome)
+            doc_type = GoogleApiManager._infer_doc_type(novo_nome)
             
             logger.info(f"Iniciando upload do documento '{novo_nome}' para a unidade: ...{self.unit_id[-6:]}")
             
@@ -99,7 +114,10 @@ class EmployeeManager:
                 return result['url']
             
             return None
-            
+        except ImportError as e:
+            logger.error(f"Módulo SupabaseStorageManager não encontrado: {e}")
+            st.error("❌ Erro de configuração do sistema")
+            return None
         except Exception as e:
             logger.error(f"Erro ao fazer upload: {e}", exc_info=True)
             st.error(f"Erro ao fazer upload: {str(e)}")
@@ -658,7 +676,9 @@ class EmployeeManager:
             if isinstance(data, datetime):
                 data = data.date()
                 if data is not None and data > hoje:
-                    return False, f"❌ Data de realização ({format_date_safe(data, '%d/%m/%Y')}) não pode ser futura"        # 4. VALIDAÇÃO 3: Vencimento após realização
+                    return False, f"❌ Data de realização ({format_date_safe(data, '%d/%m/%Y')}) não pode ser futura"
+
+            # 4. VALIDAÇÃO 3: Vencimento após realização
             if isinstance(vencimento, datetime):
                 vencimento = vencimento.date()
             if vencimento is not None and data is not None and vencimento <= data:
