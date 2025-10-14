@@ -43,8 +43,8 @@ def authenticate_user() -> bool:
     
     # ✅ TRATAMENTO CORRETO do '*'
     unit_id = user_info.get('unidade_associada')
-    
-    if not unit_id or unit_id == '*':
+
+    if not unit_id or str(unit_id).strip() == '*':
         # Usuário global (admin)
         st.session_state.unit_name = 'Global'
         st.session_state.unit_id = None

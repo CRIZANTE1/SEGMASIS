@@ -17,29 +17,12 @@ from difflib import SequenceMatcher
 import logging
 from typing import Optional, Union
 from operations.cached_loaders import load_all_unit_data
+from operations.utils import format_date_safe
 
 def similar(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
-def format_date_safe(dt: Optional[Union[date, datetime]], fmt: str = "%Y-%m-%d") -> Optional[str]:
-    """
-    Formata uma data de forma segura, retornando None se a data for inválida.
-    
-    Args:
-        dt: Data a ser formatada (pode ser date ou datetime)
-        fmt: Formato desejado para a string de data
-        
-    Returns:
-        String formatada com a data ou None se a data for inválida
-    """
-    if not dt or not isinstance(dt, (date, datetime)):
-        return None
-    try:
-        return dt.strftime(fmt)
-    except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.error(f"Erro ao formatar data {dt}: {e}")
-        return None
+
 
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
@@ -122,20 +105,7 @@ class EmployeeManager:
             st.error(f"Erro ao fazer upload: {str(e)}")
             return None
 
-    def _infer_doc_type(self, filename: str) -> str:
-        """Infere o tipo de documento pelo nome do arquivo."""
-        filename_lower = filename.lower()
-        
-        if 'aso' in filename_lower:
-            return 'aso'
-        elif 'training' in filename_lower or 'treinamento' in filename_lower:
-            return 'treinamento'
-        elif 'epi' in filename_lower:
-            return 'epi'
-        elif any(doc in filename_lower for doc in ['pgr', 'pcmso', 'ppr', 'pca']):
-            return 'doc_empresa'
-        
-        return 'aso'  # Default
+
 
 
     def load_data(self):

@@ -55,7 +55,9 @@ def initialize_managers():
         
         try:
             with st.spinner("Configurando ambiente da unidade..."):
-                # ✅ Inicializa managers com tratamento de erro
+                managers_ok = True  # ✅ Flag de controle
+
+                # ✅ EmployeeManager
                 try:
                     employee_manager = EmployeeManager(unit_id, folder_id)
                     if not employee_manager.data_loaded_successfully:
@@ -64,8 +66,9 @@ def initialize_managers():
                 except Exception as e:
                     logger.error(f"Erro ao inicializar EmployeeManager: {e}")
                     st.error("❌ Erro ao carregar dados de funcionários")
-                    return
-                
+                    managers_ok = False
+
+                # ✅ CompanyDocsManager
                 try:
                     docs_manager = CompanyDocsManager(unit_id)
                     if not docs_manager.data_loaded_successfully:
@@ -74,8 +77,9 @@ def initialize_managers():
                 except Exception as e:
                     logger.error(f"Erro ao inicializar CompanyDocsManager: {e}")
                     st.error("❌ Erro ao carregar documentos da empresa")
-                    return
-                
+                    managers_ok = False
+
+                # ✅ EPIManager
                 try:
                     epi_manager = EPIManager(unit_id)
                     if not epi_manager.data_loaded_successfully:
@@ -84,8 +88,9 @@ def initialize_managers():
                 except Exception as e:
                     logger.error(f"Erro ao inicializar EPIManager: {e}")
                     st.error("❌ Erro ao carregar dados de EPIs")
-                    return
-                
+                    managers_ok = False
+
+                # ✅ ActionPlanManager
                 try:
                     action_plan_manager = ActionPlanManager(unit_id)
                     if not action_plan_manager.data_loaded_successfully:
@@ -94,8 +99,9 @@ def initialize_managers():
                 except Exception as e:
                     logger.error(f"Erro ao inicializar ActionPlanManager: {e}")
                     st.error("❌ Erro ao carregar plano de ação")
-                    return
-                
+                    managers_ok = False
+
+                # ✅ NRAnalyzer
                 try:
                     from managers.google_api_manager import GoogleApiManager
                     google_api_manager = GoogleApiManager()
@@ -104,14 +110,20 @@ def initialize_managers():
                 except Exception as e:
                     logger.error(f"Erro ao inicializar NRAnalyzer: {e}")
                     st.error("❌ Erro ao carregar analisador NR")
-                    return
-                
+                    managers_ok = False
+
+                # ✅ TrainingMatrixManager
                 try:
                     matrix_manager = TrainingMatrixManager(unit_id)
                     st.session_state.matrix_manager_unidade = matrix_manager
                 except Exception as e:
                     logger.error(f"Erro ao inicializar TrainingMatrixManager: {e}")
                     st.error("❌ Erro ao carregar matriz de treinamentos")
+                    managers_ok = False
+
+                # ✅ CRÍTICO: Só marca como sucesso se TODOS funcionaram
+                if not managers_ok:
+                    st.session_state.managers_initialized = False
                     return
             
             st.session_state.managers_unit_id = unit_id

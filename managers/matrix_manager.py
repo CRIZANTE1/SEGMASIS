@@ -153,7 +153,7 @@ class MatrixManager:
                     }
                 )
                 
-                st.cache_data.clear()  # ✅ Limpa TODOS os caches
+                load_matrix_data.clear()
                 logger.info(f"Nova unidade '{unit_data['nome_unidade']}' adicionada. Cache invalidado.")
                 return True
                 
@@ -212,7 +212,7 @@ class MatrixManager:
                     }
                 )
                 
-                st.cache_data.clear()  # ✅ Limpa TODOS os caches
+                load_matrix_data.clear()
                 logger.info(f"Novo usuário '{user_data['email']}' adicionado. Cache invalidado.")
                 return True
                 

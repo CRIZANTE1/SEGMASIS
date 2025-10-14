@@ -43,7 +43,7 @@ def load_all_unit_data(unit_id: str) -> dict:
         ('epis', ['data_entrega', 'vencimento']),  # ✅ FALTAVA EPI
         ('action_plan', ['data_criacao', 'data_conclusao', 'prazo'])  # ✅ FALTAVA PLANO DE AÇÃO
     ]:
-        if not data[df_name].empty:
+        if data[df_name] is not None and not data[df_name].empty:
             for col in date_cols:
                 if col in data[df_name].columns:
                     try:

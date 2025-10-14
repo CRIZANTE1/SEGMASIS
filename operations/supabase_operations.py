@@ -43,10 +43,12 @@ class SupabaseOperations:
         """
         # ✅ Lista de tabelas permitidas (whitelist)
         allowed_tables = [
-            'usuarios', 'unidades', 'log_auditoria',  # Globais
-            'empresas', 'funcionarios', 'asos', 'treinamentos',  # Dados operacionais
+            'usuarios', 'unidades', 'log_auditoria',
+            'empresas', 'companies',  # ✅ Permite ambos
+            'funcionarios', 'employees',
+            'asos', 'treinamentos', 'trainings',
             'fichas_epi', 'documentos_empresa', 'plano_acao',
-            'funcoes', 'matriz_treinamentos'  # Matriz de treinamento
+            'funcoes', 'matriz_treinamentos'
         ]
         
         try:

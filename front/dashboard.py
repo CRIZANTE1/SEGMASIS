@@ -51,22 +51,11 @@ def handle_delete_confirmation(docs_manager, employee_manager):
     items = st.session_state.items_to_delete
 
     # ✅ VALIDAÇÃO CRÍTICA: Verifica tipo e conteúdo
-    if not items:
-        logger.warning("items_to_delete está vazio")
-        del st.session_state.items_to_delete
-        st.warning("⚠️ Nenhum item foi selecionado para exclusão")
-        return
-
-    if not isinstance(items, list):
-        logger.error(f"items_to_delete não é uma lista: {type(items)}")
-        del st.session_state.items_to_delete
-        st.error("❌ Erro interno: tipo de dados inválido")
-        return
-
-    if len(items) == 0:
-        logger.warning("items_to_delete é uma lista vazia")
-        del st.session_state.items_to_delete
-        st.info("ℹ️ Nenhum item para excluir")
+    if not items or not isinstance(items, list) or len(items) == 0:
+        logger.warning("items_to_delete inválido ou vazio")
+        if 'items_to_delete' in st.session_state:
+            del st.session_state.items_to_delete
+        st.warning("⚠️ Nenhum item válido para exclusão")
         return
         
     # Validação dos itens individuais
