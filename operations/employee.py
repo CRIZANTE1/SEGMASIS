@@ -380,80 +380,80 @@ class EmployeeManager:
         return aso_id
 
     def add_training(self, training_data: dict):
-        """Com tratamento de erro completo"""
-        try:
-            # 1. VALIDA (já explicado acima)
-            is_valid, validation_msg = self.validate_training_data(training_data)
-            
-            if not is_valid:
-                st.error(f"❌ Validação falhou: {validation_msg}")
-                logger.warning(f"Treinamento rejeitado: {validation_msg}")
-                return None
-            
-            # 2. PREPARA os dados
-            funcionario_id = str(training_data.get('funcionario_id'))
-            norma = self._padronizar_norma(training_data.get('norma'))
-            modulo = str(training_data.get('modulo', 'N/A')).strip()
-            
-            # Normalização de módulo
-            if norma == 'NR-10 SEP' and modulo in ['N/A', '', 'nan']:
-                modulo = 'SEP'
-            elif norma == 'NR-10' and modulo in ['N/A', '', 'nan']:
-                modulo = 'Básico'
-
-            # ✅ Valida vencimento antes de formatar
-            vencimento = training_data.get('vencimento')
-            if not vencimento:
-                logger.error("Vencimento não calculado para o treinamento")
-                st.error("❌ Erro: Vencimento do treinamento não foi calculado")
-                return None
-
-            new_data = {
-                'funcionario_id': funcionario_id,
-                'data': format_date_safe(training_data.get('data')),
-                'vencimento': format_date_safe(vencimento),
-                'norma': norma,
-                'modulo': modulo,
-                'status': "Válido",
-                'anexo': str(training_data.get('anexo')),
-                'arquivo_hash': training_data.get('arquivo_hash', ''),
-                'tipo_treinamento': str(training_data.get('tipo_treinamento', 'formação')),
-                'carga_horaria': str(training_data.get('carga_horaria', '0'))
-            }
-                    
-            # 3. TENTA SALVAR
-            logger.info(f"Salvando treinamento: {norma} - {modulo} para funcionário {funcionario_id}")
-            training_id = self.supabase_ops.insert_row("trainings", new_data)
-            
-            # 4. VERIFICA SE DEU CERTO
-            if training_id:
-                        # ✅ SUCESSO - registra no log de auditoria
-                        log_action("ADD_TRAINING", {
-                            "training_id": training_id,
-                            "employee_id": funcionario_id,
-                            "norma": norma,
-                            "modulo": modulo,
-                            "tipo": training_data.get('tipo_treinamento'),
-                            "carga_horaria": training_data.get('carga_horaria')
-                        })
-                        
-                        # Limpa cache e recarrega
-                        st.cache_data.clear()
-                        self.load_data()
-                        
-                        logger.info(f"✅ Treinamento {training_id} salvo com sucesso")
-                        return training_id
-                    else:
-                        # ❌ FALHOU - informa o usuário
-                        st.error("❌ Falha ao salvar no Supabase")
-                        logger.error(f"Supabase ops retornou None para treinamento {norma}")
-                        return None                
-        except Exception as e:
-            # ❌ ERRO INESPERADO - captura tudo
-            logger.error(f"Erro crítico ao adicionar treinamento: {e}", exc_info=True)
-            st.error(f"❌ Erro inesperado: {str(e)}")
-            st.info(" Tente novamente ou contate o suporte se o erro persistir")
+    """Com tratamento de erro completo"""
+    try:
+        # 1. VALIDA (já explicado acima)
+        is_valid, validation_msg = self.validate_training_data(training_data)
+        
+        if not is_valid:
+            st.error(f"❌ Validação falhou: {validation_msg}")
+            logger.warning(f"Treinamento rejeitado: {validation_msg}")
             return None
+        
+        # 2. PREPARA os dados
+        funcionario_id = str(training_data.get('funcionario_id'))
+        norma = self._padronizar_norma(training_data.get('norma'))
+        modulo = str(training_data.get('modulo', 'N/A')).strip()
+        
+        # Normalização de módulo
+        if norma == 'NR-10 SEP' and modulo in ['N/A', '', 'nan']:
+            modulo = 'SEP'
+        elif norma == 'NR-10' and modulo in ['N/A', '', 'nan']:
+            modulo = 'Básico'
+
+        # ✅ Valida vencimento antes de formatar
+        vencimento = training_data.get('vencimento')
+        if not vencimento:
+            logger.error("Vencimento não calculado para o treinamento")
+            st.error("❌ Erro: Vencimento do treinamento não foi calculado")
+            return None
+
+        new_data = {
+            'funcionario_id': funcionario_id,
+            'data': format_date_safe(training_data.get('data')),
+            'vencimento': format_date_safe(vencimento),
+            'norma': norma,
+            'modulo': modulo,
+            'status': "Válido",
+            'anexo': str(training_data.get('anexo')),
+            'arquivo_hash': training_data.get('arquivo_hash', ''),
+            'tipo_treinamento': str(training_data.get('tipo_treinamento', 'formação')),
+            'carga_horaria': str(training_data.get('carga_horaria', '0'))
+        }
+                
+        # 3. TENTA SALVAR
+        logger.info(f"Salvando treinamento: {norma} - {modulo} para funcionário {funcionario_id}")
+        training_id = self.supabase_ops.insert_row("trainings", new_data)
+        
+        # 4. VERIFICA SE DEU CERTO
+        if training_id:
+            # ✅ SUCESSO - registra no log de auditoria
+            log_action("ADD_TRAINING", {
+                "training_id": training_id,
+                "employee_id": funcionario_id,
+                "norma": norma,
+                "modulo": modulo,
+                "tipo": training_data.get('tipo_treinamento'),
+                "carga_horaria": training_data.get('carga_horaria')
+            })
+            
+            # Limpa cache e recarrega
+            st.cache_data.clear()
+            self.load_data()
+            
+            logger.info(f"✅ Treinamento {training_id} salvo com sucesso")
+            return training_id
+        else:
+            # ❌ FALHOU - informa o usuário
+            st.error("❌ Falha ao salvar no Supabase")
+            logger.error(f"Supabase ops retornou None para treinamento {norma}")
+            return None                
+    except Exception as e:
+        # ❌ ERRO INESPERADO - captura tudo
+        logger.error(f"Erro crítico ao adicionar treinamento: {e}", exc_info=True)
+        st.error(f"❌ Erro inesperado: {str(e)}")
+        st.info(" Tente novamente ou contate o suporte se o erro persistir")
+        return None
 
     def _set_status(self, sheet_name: str, item_id: str, status: str):
         table_name_map = {
