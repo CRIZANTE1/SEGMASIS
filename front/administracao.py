@@ -5,6 +5,7 @@ from datetime import date
 from managers.matrix_manager import MatrixManager as GlobalMatrixManager
 
 logger = logging.getLogger('segsisone_app.administracao')
+
 from operations.employee import EmployeeManager
 from operations.company_docs import CompanyDocsManager
 from auth.auth_utils import check_permission
