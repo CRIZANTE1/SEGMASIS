@@ -24,7 +24,7 @@ A qualidade das respostas geradas pelos modelos Gemini depende diretamente da qu
 }
 ```
 
-### Prompt 3: Auditoria Avançada de Documento (Gemini 1.5 Pro + RAG)
+### Prompt 3: Auditoria Avançada de Documento (Gemini 2.5 Pro + RAG)
 
 - **Módulo:** `analysis/nr_analyzer.py`
 - **Função:** `_get_advanced_audit_prompt()`
@@ -87,14 +87,14 @@ def _get_advanced_audit_prompt(doc_info, relevant_knowledge):
     - Análise de Documentos da Empresa
     - Análise de Fichas de EPI
 
-### Por que `gemini-1.5-flash`?
+### Por que `gemini-2.5-flash`?
 
 1. **Velocidade:** Otimizado para baixa latência (5-15 segundos)
 2. **Custo-Benefício:** Menor custo por token
 3. **Janela de Contexto Ampla:** 1 milhão de tokens
 4. **Capacidade Suficiente:** Excelente precisão para extração estruturada
 
-## 2. Modelo de Auditoria: `gemini-1.5-pro`
+## 2. Modelo de Auditoria: `gemini-2.5-pro`
 
 - **Chave de API:** `GEMINI_AUDIT_KEY` em `.streamlit/secrets.toml`
 - **Responsabilidade Principal:** Análise complexa e auditoria de conformidade
@@ -102,7 +102,7 @@ def _get_advanced_audit_prompt(doc_info, relevant_knowledge):
     - Auditoria de conformidade
     - Geração de recomendações para Matriz de Treinamentos
 
-### Por que `gemini-1.5-pro`?
+### Por que `gemini-2.5-pro`?
 
 1. **Raciocínio Avançado:** Superior em tarefas multi-etapas
 2. **Instruções Complexas:** Melhor capacidade de seguir diretrizes detalhadas
