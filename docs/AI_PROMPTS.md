@@ -77,7 +77,7 @@ def _get_advanced_audit_prompt(doc_info, relevant_knowledge):
 
 # 🤖 Modelos de IA Utilizados
 
-## 1. Modelo de Extração: `gemini-1.5-flash`
+## 1. Modelo de Extração: `gemini-2.5-flash`
 
 - **Chave de API:** `GEMINI_EXTRACTION_KEY` em `.streamlit/secrets.toml`
 - **Responsabilidade Principal:** Extração de dados estruturados a partir de documentos PDF
