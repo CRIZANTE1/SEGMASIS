@@ -41,12 +41,25 @@ class SupabaseOperations:
         Returns:
             DataFrame com os dados da tabela
         """
+        # ✅ Lista de tabelas permitidas (whitelist)
+        allowed_tables = [
+            'usuarios', 'unidades', 'log_auditoria',  # Globais
+            'empresas', 'funcionarios', 'asos', 'treinamentos',  # Dados operacionais
+            'fichas_epi', 'documentos_empresa', 'plano_acao',
+            'funcoes', 'matriz_treinamentos'  # Matriz de treinamento
+        ]
+        
         try:
             # Valida o nome da tabela
             if not table_name or not isinstance(table_name, str):
                 logger.error(f"Nome da tabela inválido: {table_name}")
                 return pd.DataFrame()
             
+            # ✅ Valida se é uma tabela permitida
+            if table_name not in allowed_tables:
+                logger.error(f"Acesso negado à tabela não permitida: {table_name}")
+                return pd.DataFrame()
+
             # Decide se usa filtro de unit_id
             if table_name in self.global_tables or self.unit_id is None:
                 query = self.client.table(table_name).select("*")

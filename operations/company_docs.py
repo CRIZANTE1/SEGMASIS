@@ -162,6 +162,17 @@ class CompanyDocsManager:
                 st.warning(f"⚠️ Este arquivo PDF já foi cadastrado anteriormente para esta empresa.")
                 return None
         
+        # ✅ Valida datas antes de formatar
+        if not isinstance(data_emissao, date):
+            logger.error(f"data_emissao inválida: {type(data_emissao)}")
+            st.error("❌ Data de emissão inválida")
+            return None
+
+        if not isinstance(vencimento, date):
+            logger.error(f"vencimento inválido: {type(vencimento)}")
+            st.error("❌ Data de vencimento inválida")
+            return None
+
         new_data = {
             'empresa_id': empresa_id_str,
             'tipo_documento': str(tipo_documento),

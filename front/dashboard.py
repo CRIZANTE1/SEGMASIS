@@ -49,13 +49,24 @@ def handle_delete_confirmation(docs_manager, employee_manager):
         return
     
     items = st.session_state.items_to_delete
-    
-    # ✅ Validação adicional
-    if not items or not isinstance(items, list):
-        logger.warning("items_to_delete inválido, limpando...")
+
+    # ✅ VALIDAÇÃO CRÍTICA: Verifica tipo e conteúdo
+    if not items:
+        logger.warning("items_to_delete está vazio")
         del st.session_state.items_to_delete
-        st.error("❌ Lista de exclusão inválida. Tente selecionar os itens novamente.")
-        st.stop()  # Para a execução
+        st.warning("⚠️ Nenhum item foi selecionado para exclusão")
+        return
+
+    if not isinstance(items, list):
+        logger.error(f"items_to_delete não é uma lista: {type(items)}")
+        del st.session_state.items_to_delete
+        st.error("❌ Erro interno: tipo de dados inválido")
+        return
+
+    if len(items) == 0:
+        logger.warning("items_to_delete é uma lista vazia")
+        del st.session_state.items_to_delete
+        st.info("ℹ️ Nenhum item para excluir")
         return
         
     # Validação dos itens individuais
@@ -271,22 +282,26 @@ def show_dashboard_page():
                                 
                                 # ✅ Cria coluna combinada para exibição clara
                                 def format_training_display(row):
-                                    norma = str(row.get('norma', 'N/A')).strip()
-                                    modulo = str(row.get('modulo', 'N/A')).strip()
-                                    tipo = str(row.get('tipo_treinamento', 'N/A')).strip().title()
-                                    
-                                    # Se for NR-10 SEP, destaca
-                                    if 'SEP' in norma.upper() or 'SEP' in modulo.upper():
-                                        return f"⚡ NR-10 SEP ({tipo})"
-                                    
-                                    # Para normas com módulos relevantes
-                                    if modulo and modulo not in ['N/A', 'nan', '', 'Nan']:
-                                        # Normaliza o módulo para exibição
-                                        modulo_exibicao = modulo.title()
-                                        return f"{norma} - {modulo_exibicao} ({tipo})"
-                                    
-                                    # Para normas simples
-                                    return f"{norma} ({tipo})"
+                                    try:
+                                        norma = str(row.get('norma', 'N/A')).strip() if 'norma' in row.index else 'N/A'
+                                        modulo = str(row.get('modulo', 'N/A')).strip() if 'modulo' in row.index else 'N/A'
+                                        tipo = str(row.get('tipo_treinamento', 'N/A')).strip().title() if 'tipo_treinamento' in row.index else 'N/A'
+                                        
+                                        # Se for NR-10 SEP, destaca
+                                        if 'SEP' in norma.upper() or 'SEP' in modulo.upper():
+                                            return f"⚡ NR-10 SEP ({tipo})"
+                                        
+                                        # Para normas com módulos relevantes
+                                        if modulo and modulo not in ['N/A', 'nan', '', 'Nan']:
+                                            modulo_exibicao = modulo.title()
+                                            return f"{norma} - {modulo_exibicao} ({tipo})"
+                                        
+                                        # Para normas simples
+                                        return f"{norma} ({tipo})"
+                                        
+                                    except Exception as e:
+                                        logger.error(f"Erro ao formatar display de treinamento: {e}")
+                                        return "Erro ao exibir"
                                 
                                 all_trainings['treinamento_completo'] = all_trainings.apply(format_training_display, axis=1)
 
@@ -378,28 +393,36 @@ def show_dashboard_page():
 
                                         # ✅ Verifica treinamentos faltantes
                                         missing = []
-                                        for req in required_trainings:
-                                            req_lower = req.lower().strip()
-                                            
-                                            # ✅ CORREÇÃO CRÍTICA: NR-10 Básico NÃO cobre NR-10 SEP
-                                            if 'nr-10 sep' in req_lower or 'nr-10-sep' in req_lower:
-                                                # Verifica especificamente por SEP
-                                                has_sep = any('sep' in comp for comp in completed_trainings if 'nr-10' in comp)
-                                                if not has_sep:
+                                        try:
+                                            for req in required_trainings:
+                                                if not req or not isinstance(req, str):
+                                                    logger.warning(f"Treinamento requerido inválido: {req}")
+                                                    continue
+                                                
+                                                req_lower = req.lower().strip()
+                                                
+                                                # ✅ CORREÇÃO CRÍTICA: NR-10 Básico NÃO cobre NR-10 SEP
+                                                if 'nr-10 sep' in req_lower or 'nr-10-sep' in req_lower:
+                                                    has_sep = any('sep' in comp for comp in completed_trainings if 'nr-10' in comp)
+                                                    if not has_sep:
+                                                        missing.append(req)
+                                                    continue
+                                                
+                                                # Verifica match exato ou fuzzy (score > 85)
+                                                has_match = any(
+                                                    req_lower == comp or 
+                                                    req_lower in comp or 
+                                                    comp in req_lower or
+                                                    fuzz.ratio(req_lower, comp) > 85
+                                                    for comp in completed_trainings
+                                                )
+                                                
+                                                if not has_match:
                                                     missing.append(req)
-                                                continue
-                                            
-                                            # Verifica match exato ou fuzzy (score > 85)
-                                            has_match = any(
-                                                req_lower == comp or 
-                                                req_lower in comp or 
-                                                comp in req_lower or
-                                                fuzz.ratio(req_lower, comp) > 85
-                                                for comp in completed_trainings
-                                            )
-                                            
-                                            if not has_match:
-                                                missing.append(req)
+                                                    
+                                        except Exception as e:
+                                            logger.error(f"Erro ao verificar treinamentos faltantes: {e}")
+                                            st.warning("⚠️ Erro ao verificar conformidade de treinamentos")
 
                                         if not missing:
                                             st.success("✅ Todos os treinamentos obrigatórios foram realizados.")

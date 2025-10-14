@@ -54,6 +54,21 @@ class SupabaseStorageManager:
         Returns:
             dict com 'path' e 'url' do arquivo, ou None em caso de erro
         """
+        # ✅ Validações de entrada
+        if not file_content:
+            logger.error("Conteúdo do arquivo está vazio")
+            st.error("❌ Erro: arquivo vazio")
+            return None
+        
+        if not filename or not isinstance(filename, str):
+            logger.error(f"Nome de arquivo inválido: {filename}")
+            st.error("❌ Erro: nome de arquivo inválido")
+            return None
+        
+        if not doc_type or doc_type not in ['aso', 'treinamento', 'epi', 'doc_empresa']:
+            logger.warning(f"Tipo de documento desconhecido: {doc_type}, usando 'aso'")
+            doc_type = 'aso'
+        
         try:
             bucket_name = get_bucket_name(doc_type)
             file_path = self._get_file_path(doc_type, filename)
@@ -188,6 +203,11 @@ class SupabaseStorageManager:
             
             # Remove 'public/' ou 'sign/' do início
             path_with_bucket = parts[1].replace('public/', '').replace('sign/', '')
+            
+            # ✅ Remove query parameters de signed URLs
+            if '?' in path_with_bucket:
+                path_with_bucket = path_with_bucket.split('?')[0]
+                logger.debug("Query parameters removidos da URL")
             
             # Separa bucket e path
             path_parts = path_with_bucket.split('/', 1)

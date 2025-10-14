@@ -143,11 +143,26 @@ class EmployeeManager:
         try:
             # USA O NOVO CARREGADOR DO SUPABASE
             data = load_all_unit_data(self.unit_id)
+
+            # ✅ Valida se os dados foram carregados
+            if not data or not isinstance(data, dict):
+                logger.error("load_all_unit_data retornou dados inválidos")
+                self.data_loaded_successfully = False
+                return
             
-            self.companies_df = data['companies']
-            self.employees_df = data['employees']
-            self.aso_df = data['asos']
-            self.training_df = data['trainings']
+            # ✅ Valida se todas as chaves necessárias existem
+            required_keys = ['companies', 'employees', 'asos', 'trainings']
+            missing_keys = [key for key in required_keys if key not in data]
+            
+            if missing_keys:
+                logger.error(f"Chaves faltando no retorno: {missing_keys}")
+                self.data_loaded_successfully = False
+                return
+            
+            self.companies_df = data['companies'] if data.get('companies') is not None else pd.DataFrame()
+            self.employees_df = data['employees'] if data.get('employees') is not None else pd.DataFrame()
+            self.aso_df = data['asos'] if data.get('asos') is not None else pd.DataFrame()
+            self.training_df = data['trainings'] if data.get('trainings') is not None else pd.DataFrame()
             
             # ✅ CRIA ÍNDICES (acontece UMA VEZ no carregamento)
             if not self.companies_df.empty:
@@ -175,15 +190,35 @@ class EmployeeManager:
             self.data_loaded_successfully = False
 
     def _parse_flexible_date(self, date_string: str) -> date | None:
-        if not date_string or not isinstance(date_string, str) or date_string.lower() == 'n/a': return None
-        match = re.search(r'(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})|(\d{1,2} de \w+ de \d{4})|(\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2})', date_string, re.IGNORECASE)
-        if not match: return None
-        clean_date_string = match.group(0).replace('.', '/')
-        formats = ['%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y', '%d de %B de %Y', '%Y-%m-%d']
-        for fmt in formats:
-            try: return datetime.strptime(clean_date_string, fmt).date()
-            except ValueError: continue
-        return None
+        try:
+            if not date_string or not isinstance(date_string, str) or date_string.lower() == 'n/a': 
+                return None
+            
+            # Remove espaços extras
+            date_string = str(date_string).strip()
+            
+            if not date_string:
+                return None
+                
+            match = re.search(r'(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})|(\d{1,2} de \w+ de \d{4})|(\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2})', date_string, re.IGNORECASE)
+            
+            if not match: 
+                return None
+                
+            clean_date_string = match.group(0).replace('.', '/')
+            formats = ['%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y', '%d de %B de %Y', '%Y-%m-%d']
+            
+            for fmt in formats:
+                try: 
+                    return datetime.strptime(clean_date_string, fmt).date()
+                except ValueError: 
+                    continue
+                    
+            return None
+            
+        except Exception as e:
+            logger.error(f"Erro ao parsear data '{date_string}': {e}")
+            return None
 
     def analyze_aso_pdf(self, pdf_file):
         try:
@@ -270,9 +305,26 @@ class EmployeeManager:
             if not answer: return None
 
             cleaned_answer = answer.strip().replace("```json", "").replace("```", "")
-            data = json.loads(cleaned_answer)
+            try:
+                data = json.loads(cleaned_answer)
+            except json.JSONDecodeError as e:
+                logger.error(f"Erro ao parsear JSON do treinamento: {e}")
+                st.error("❌ A IA retornou um formato inválido")
+                return None
+
+            # ✅ Valida chaves obrigatórias
+            required_keys = ['data_realizacao', 'norma', 'tipo_treinamento']
+            missing_keys = [key for key in required_keys if key not in data]
+
+            if missing_keys:
+                logger.error(f"JSON do treinamento faltando chaves: {missing_keys}")
+                st.error(f"❌ Dados incompletos: {', '.join(missing_keys)}")
+                return None
+
             data_realizacao = self._parse_flexible_date(data.get('data_realizacao'))
-            if not data_realizacao: return None
+            if not data_realizacao: 
+                st.error("❌ Data de realização inválida ou não encontrada")
+                return None
                 
             norma_padronizada = self._padronizar_norma(data.get('norma'))
             modulo = str(data.get('modulo', 'N/A')).strip()
@@ -379,10 +431,17 @@ class EmployeeManager:
             elif norma == 'NR-10' and modulo in ['N/A', '', 'nan']:
                 modulo = 'Básico'
 
+            # ✅ Valida vencimento antes de formatar
+            vencimento = training_data.get('vencimento')
+            if not vencimento:
+                logger.error("Vencimento não calculado para o treinamento")
+                st.error("❌ Erro: Vencimento do treinamento não foi calculado")
+                return None
+
             new_data = {
                 'funcionario_id': funcionario_id,
                 'data': format_date_safe(training_data.get('data')),
-                'vencimento': format_date_safe(training_data.get('vencimento')),
+                'vencimento': format_date_safe(vencimento),
                 'norma': norma,
                 'modulo': modulo,
                 'status': "Válido",
@@ -447,8 +506,25 @@ class EmployeeManager:
     def unarchive_employee(self, employee_id: str): return self._set_status("funcionarios", employee_id, "Ativo")
 
     def get_latest_aso_by_employee(self, employee_id):
+        # ✅ Valida entrada
+        if not employee_id:
+            logger.warning("employee_id não fornecido")
+            return pd.DataFrame()
+        
+        if not isinstance(employee_id, (str, int)):
+            logger.error(f"employee_id tem tipo inválido: {type(employee_id)}")
+            return pd.DataFrame()
+        
         try:
-            aso_docs = self._asos_by_employee.get_group(str(employee_id)).copy()
+            # ✅ Valida se o índice existe
+            if not hasattr(self, '_asos_by_employee'):
+                logger.warning("Índice _asos_by_employee não criado, usando busca direta")
+                if self.aso_df.empty:
+                    return pd.DataFrame()
+                aso_docs = self.aso_df[self.aso_df['funcionario_id'] == str(employee_id)].copy()
+            else:
+                aso_docs = self._asos_by_employee.get_group(str(employee_id)).copy()
+
             if aso_docs.empty: return pd.DataFrame()
             
             aso_docs['data_aso'] = pd.to_datetime(aso_docs['data_aso'], format='%d/%m/%Y', errors='coerce')
@@ -459,6 +535,9 @@ class EmployeeManager:
             aso_docs['tipo_aso'] = aso_docs['tipo_aso'].fillna('N/A')
             return aso_docs.sort_values('data_aso', ascending=False).groupby('tipo_aso').head(1)
         except KeyError:
+            return pd.DataFrame()
+        except Exception as e:
+            logger.error(f"Erro ao buscar ASOs: {e}")
             return pd.DataFrame()
 
     def get_all_trainings_by_employee(self, employee_id):
@@ -531,6 +610,13 @@ class EmployeeManager:
             # ✅ CRÍTICO: Converte 'data' para datetime se ainda não for
             training_docs['data_dt'] = pd.to_datetime(training_docs['data'], errors='coerce')
             
+            # ✅ VALIDAÇÃO: Remove linhas sem data válida
+            training_docs = training_docs[training_docs['data_dt'].notna()]
+
+            if training_docs.empty:
+                logger.debug(f"Nenhum treinamento com data válida para employee_id {employee_id}")
+                return pd.DataFrame()
+
             # ✅ LÓGICA PRINCIPAL: Agrupa por (norma, módulo) e pega o MAIS RECENTE
             # Isso significa que uma RECICLAGEM de 2024 vai ocultar uma FORMAÇÃO de 2020
             latest_trainings = training_docs.sort_values(
@@ -555,14 +641,26 @@ class EmployeeManager:
         return employee.iloc[0]['nome'] if not employee.empty else f"ID {employee_id}"
 
     def get_employees_by_company(self, company_id: str, include_archived: bool = False):
+        # ✅ Valida se o índice foi criado
+        if not hasattr(self, '_employees_by_company'):
+            logger.warning("Índice _employees_by_company não foi criado. Usando busca direta.")
+            if self.employees_df.empty:
+                return pd.DataFrame()
+            result = self.employees_df[self.employees_df['empresa_id'] == str(company_id)]
+            if not include_archived and 'status' in result.columns:
+                result = result[result['status'].str.lower() == 'ativo']
+            return result
+        
         try:
-            # Busca no índice pré-criado (MUITO mais rápido)
             company_employees = self._employees_by_company.get_group(str(company_id))
             if include_archived or 'status' not in company_employees.columns:
                 return company_employees
             return company_employees[company_employees['status'].str.lower() == 'ativo']
         except KeyError:
-            # Empresa não tem funcionários
+            logger.debug(f"Empresa {company_id} não tem funcionários")
+            return pd.DataFrame()
+        except Exception as e:
+            logger.error(f"Erro ao buscar funcionários: {e}")
             return pd.DataFrame()
 
     def validate_training_data(self, training_data: dict) -> tuple[bool, str]:
@@ -570,50 +668,54 @@ class EmployeeManager:
         Valida TUDO antes de salvar
         Retorna: (True, "OK") ou (False, "mensagem de erro")
         """
-        # 1. Extrai os dados
-        norma = training_data.get('norma')
-        modulo = training_data.get('modulo', 'N/A')
-        tipo = training_data.get('tipo_treinamento', 'formação')
-        carga_horaria = training_data.get('carga_horaria', 0)
-        data = training_data.get('data')
-        vencimento = training_data.get('vencimento')
-        
-        # 2. VALIDAÇÃO 1: Campos obrigatórios e tipo correto
-        if not all([norma, 
-                   isinstance(data, (date, datetime)), 
-                   isinstance(vencimento, (date, datetime))]):
-            return False, "❌ Faltam campos obrigatórios ou datas inválidas"
-        
-        # 3. VALIDAÇÃO 2: Data não pode ser futura
-        hoje = date.today()
-        if isinstance(data, datetime):
-            data = data.date()
-            if data is not None and data > hoje:
-                return False, f"❌ Data de realização ({format_date_safe(data, '%d/%m/%Y')}) não pode ser futura"        # 4. VALIDAÇÃO 3: Vencimento após realização
-        if isinstance(vencimento, datetime):
-            vencimento = vencimento.date()
-        if vencimento is not None and data is not None and vencimento <= data:
-            return False, f"❌ Vencimento deve ser após a data de realização"
-        
-        # 5. VALIDAÇÃO 4: Carga horária (usa função existente)
-        is_valid, msg = self.validar_treinamento(norma, modulo, tipo, carga_horaria)
-        if not is_valid:
-            return False, msg
-        
-        # 6. VALIDAÇÃO 5: Duplicata por hash
-        arquivo_hash = training_data.get('arquivo_hash')
-        funcionario_id = str(training_data.get('funcionario_id'))
-        
-        if arquivo_hash and verificar_hash_seguro(self.training_df, 'arquivo_hash'):
-            duplicata = self.training_df[
-                (self.training_df['funcionario_id'] == funcionario_id) &
-                (self.training_df['arquivo_hash'] == arquivo_hash)
-            ]
-            if not duplicata.empty:
-                return False, "❌ Este PDF já foi cadastrado anteriormente"
-        
-        # 7. TUDO OK!
-        return True, "✅ Validação aprovada"
+        try:
+            # 1. Extrai os dados
+            norma = training_data.get('norma')
+            modulo = training_data.get('modulo', 'N/A')
+            tipo = training_data.get('tipo_treinamento', 'formação')
+            carga_horaria = training_data.get('carga_horaria', 0)
+            data = training_data.get('data')
+            vencimento = training_data.get('vencimento')
+            
+            # 2. VALIDAÇÃO 1: Campos obrigatórios e tipo correto
+            if not all([norma, 
+                       isinstance(data, (date, datetime)), 
+                       isinstance(vencimento, (date, datetime))]):
+                return False, "❌ Faltam campos obrigatórios ou datas inválidas"
+            
+            # 3. VALIDAÇÃO 2: Data não pode ser futura
+            hoje = date.today()
+            if isinstance(data, datetime):
+                data = data.date()
+                if data is not None and data > hoje:
+                    return False, f"❌ Data de realização ({format_date_safe(data, '%d/%m/%Y')}) não pode ser futura"        # 4. VALIDAÇÃO 3: Vencimento após realização
+            if isinstance(vencimento, datetime):
+                vencimento = vencimento.date()
+            if vencimento is not None and data is not None and vencimento <= data:
+                return False, f"❌ Vencimento deve ser após a data de realização"
+            
+            # 5. VALIDAÇÃO 4: Carga horária (usa função existente)
+            is_valid, msg = self.validar_treinamento(norma, modulo, tipo, carga_horaria)
+            if not is_valid:
+                return False, msg
+            
+            # 6. VALIDAÇÃO 5: Duplicata por hash
+            arquivo_hash = training_data.get('arquivo_hash')
+            funcionario_id = str(training_data.get('funcionario_id'))
+            
+            if arquivo_hash and verificar_hash_seguro(self.training_df, 'arquivo_hash'):
+                duplicata = self.training_df[
+                    (self.training_df['funcionario_id'] == funcionario_id) &
+                    (self.training_df['arquivo_hash'] == arquivo_hash)
+                ]
+                if not duplicata.empty:
+                    return False, "❌ Este PDF já foi cadastrado anteriormente"
+            
+            # 7. TUDO OK!
+            return True, "✅ Validação aprovada"
+        except Exception as e:
+            logger.error(f"Erro crítico na validação: {e}", exc_info=True)
+            return False, f"❌ Erro na validação: {str(e)}"
 
     def _padronizar_norma(self, norma):
         if not norma: return "N/A"

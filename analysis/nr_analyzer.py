@@ -161,14 +161,17 @@ class NRAnalyzer:
             return "Base de conhecimento indisponível ou não indexada."
 
         try:
-            # ✅ CORREÇÃO: Usa a API correta
-            import google.generativeai as genai
-            
-            result = genai.embed_content(
-                model="models/text-embedding-004",
-                content=query_text,
-                task_type="retrieval_query"
-            )
+            try:
+                from google.generativeai import embed_content
+                
+                result = embed_content(
+                    model="models/text-embedding-004",
+                    content=query_text,
+                    task_type="retrieval_query"
+                )
+            except ImportError:
+                logger.error("Falha ao importar embed_content do google.generativeai")
+                return "Erro: módulo de embeddings não disponível" 
             
             query_embedding = np.array(result['embedding']).reshape(1, -1)
             

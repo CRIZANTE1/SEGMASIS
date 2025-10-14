@@ -46,17 +46,21 @@ def load_all_unit_data(unit_id: str) -> dict:
         if not data[df_name].empty:
             for col in date_cols:
                 if col in data[df_name].columns:
-                    # ✅ Conta quantas datas inválidas foram encontradas
-                    before_count = data[df_name][col].notna().sum()
-                    data[df_name][col] = pd.to_datetime(data[df_name][col], errors='coerce')
-                    after_count = data[df_name][col].notna().sum()
-                    
-                    if before_count != after_count:
-                        invalid_count = before_count - after_count
-                        logger.warning(
-                            f"Tabela '{df_name}', coluna '{col}': "
-                            f"{invalid_count} data(s) inválida(s) convertida(s) para NaT"
-                        )
+                    try:
+                        before_count = data[df_name][col].notna().sum()
+                        data[df_name][col] = pd.to_datetime(data[df_name][col], errors='coerce')
+                        after_count = data[df_name][col].notna().sum()
+                        
+                        if before_count != after_count:
+                            invalid_count = before_count - after_count
+                            logger.warning(
+                                f"Tabela '{df_name}', coluna '{col}': "
+                                f"{invalid_count} data(s) inválida(s) convertida(s) para NaT"
+                            )
+                    except KeyError:
+                        logger.warning(f"Coluna '{col}' não encontrada em '{df_name}'")
+                    except Exception as e:
+                        logger.error(f"Erro ao processar datas em '{df_name}.{col}': {e}")
     
     return data
 

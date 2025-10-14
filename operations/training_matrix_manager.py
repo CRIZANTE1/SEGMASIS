@@ -217,10 +217,16 @@ class MatrixManager:
             
         function_id = function.iloc[0]['id']
         required_df = self.matrix_df[self.matrix_df['id_funcao'] == function_id]
-        
+
         if required_df.empty:
             return []
-        return required_df['norma_obrigatoria'].dropna().tolist()
+
+        # ✅ Remove valores None, vazios e duplicatas
+        trainings = required_df['norma_obrigatoria'].dropna().tolist()
+        trainings = [t.strip() for t in trainings if t and str(t).strip()]
+        trainings = list(set(trainings))  # Remove duplicatas
+
+        return sorted(trainings)  # Retorna ordenado
 
     def analyze_matrix_pdf(self, pdf_file):
         """Analisa PDF de matriz de treinamentos."""

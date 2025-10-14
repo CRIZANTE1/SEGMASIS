@@ -40,12 +40,14 @@ def configurar_pagina():
     )
 
 def initialize_managers():
-    """
-    Função central para criar, destruir e gerenciar as instâncias dos managers.
-    Agora com validações robustas e tratamento de erros.
-    """
     unit_id = st.session_state.get('unit_id')
-    folder_id = st.session_state.get('folder_id')  # Opcional
+    folder_id = st.session_state.get('folder_id')
+    
+    # ✅ Valida tipo do unit_id
+    if unit_id and not isinstance(unit_id, str):
+        logger.error(f"unit_id tem tipo inválido: {type(unit_id)}")
+        st.error("❌ Erro: ID da unidade inválido")
+        return
     
     # Verifica se precisa reinicializar os managers
     if unit_id and st.session_state.get('managers_unit_id') != unit_id:

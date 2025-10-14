@@ -250,13 +250,22 @@ def display_global_summary_dashboard(companies_df, employees_df, asos_df, traini
     df_consolidated = pd.concat(counts_list, axis=1).fillna(0).astype(int)
     
     # ✅ CORREÇÃO CRÍTICA: Remove linhas com soma zero ANTES de qualquer operação
-    df_consolidated = df_consolidated[df_consolidated.sum(axis=1) > 0]
+    try:
+        df_consolidated = df_consolidated[df_consolidated.sum(axis=1) > 0]
+    except Exception as e:
+        logger.error(f"Erro ao filtrar pendências: {e}")
+        st.error("Erro ao processar dados de pendências")
+        return
 
     if df_consolidated.empty:
         st.success("Todas as pendências foram resolvidas. Gráfico não será exibido.")
         return
 
-    st.bar_chart(df_consolidated)
+    try:
+        st.bar_chart(df_consolidated)
+    except Exception as e:
+        logger.error(f"Erro ao renderizar gráfico: {e}")
+        st.error("Erro ao exibir gráfico de pendências")
     
     with st.expander("Ver tabela de dados de pendências consolidada"):
         df_with_total = df_consolidated.copy()
