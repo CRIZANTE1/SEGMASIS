@@ -43,14 +43,13 @@ def load_all_unit_data(unit_id: str) -> dict:
         ('epis', ['data_entrega', 'vencimento']),  # ✅ FALTAVA EPI
         ('action_plan', ['data_criacao', 'data_conclusao', 'prazo'])  # ✅ FALTAVA PLANO DE AÇÃO
     ]:
-        df = data[df_name]
-        if not df.empty:
+        if not data[df_name].empty:
             for col in date_cols:
-                if col in df.columns:
+                if col in data[df_name].columns:
                     # ✅ Conta quantas datas inválidas foram encontradas
-                    before_count = df[col].notna().sum()
-                    df[col] = pd.to_datetime(df[col], errors='coerce')
-                    after_count = df[col].notna().sum()
+                    before_count = data[df_name][col].notna().sum()
+                    data[df_name][col] = pd.to_datetime(data[df_name][col], errors='coerce')
+                    after_count = data[df_name][col].notna().sum()
                     
                     if before_count != after_count:
                         invalid_count = before_count - after_count

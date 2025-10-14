@@ -95,7 +95,9 @@ def initialize_managers():
                     return
                 
                 try:
-                    nr_analyzer = NRAnalyzer(unit_id)
+                    from managers.google_api_manager import GoogleApiManager
+                    google_api_manager = GoogleApiManager()
+                    nr_analyzer = NRAnalyzer(unit_id, google_api_manager)
                     st.session_state.nr_analyzer = nr_analyzer
                 except Exception as e:
                     logger.error(f"Erro ao inicializar NRAnalyzer: {e}")

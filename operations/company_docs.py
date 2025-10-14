@@ -196,14 +196,21 @@ class CompanyDocsManager:
             }
             log_action("DELETE_COMPANY_DOC", details)
 
+        # 1. Deleta do banco PRIMEIRO
+        db_deleted = self.supabase_ops.delete_row("documentos_empresa", doc_id)
+        
+        if not db_deleted:
+            logger.error(f"Falha ao deletar registro {doc_id} do banco")
+            return False
+        
+        # 2. Tenta deletar do storage (se falhar, não é crítico)
         if file_url and pd.notna(file_url):
             try:
                 self.storage_manager.delete_file_by_url(file_url)
             except Exception as e:
-                logger.error(f"Erro ao deletar arquivo do storage: {e}")
+                logger.warning(f"Arquivo órfão no storage: {file_url} - Erro: {e}")
+                # NÃO retorna False, pois o registro JÁ foi deletado
         
-        if self.supabase_ops.delete_row("documentos_empresa", doc_id):
-            st.cache_data.clear()
-            self.load_company_data()
-            return True
-        return False
+        st.cache_data.clear()
+        self.load_company_data()
+        return True

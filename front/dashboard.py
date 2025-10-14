@@ -52,8 +52,10 @@ def handle_delete_confirmation(docs_manager, employee_manager):
     
     # ✅ Validação adicional
     if not items or not isinstance(items, list):
-        logger.warning("items_to_delete está vazio ou em formato inválido")
+        logger.warning("items_to_delete inválido, limpando...")
         del st.session_state.items_to_delete
+        st.error("❌ Lista de exclusão inválida. Tente selecionar os itens novamente.")
+        st.stop()  # Para a execução
         return
         
     # Validação dos itens individuais

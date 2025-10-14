@@ -1,6 +1,12 @@
 import streamlit as st
 import time
+import threading
+from queue import Queue, Empty
 from AI.api_load import load_models  
+
+class TimeoutException(Exception):
+    pass
+
 
 class PDFQA:
     def __init__(self):
@@ -51,30 +57,49 @@ class PDFQA:
 
     def _generate_response(self, model, pdf_files, question):
         """
-        Função interna que prepara e envia a requisição para um modelo Gemini específico.
+        Função interna que prepara e envia a requisição para um modelo Gemini específico, com timeout.
         """
-        try:
-            # Preparar os inputs para o modelo
-            inputs = []
-            
-            for pdf_file in pdf_files:
-                if hasattr(pdf_file, 'read'):  # Se for um objeto de arquivo (como st.UploadedFile)
-                    pdf_bytes = pdf_file.getvalue() # Use getvalue() que é mais seguro
-                else:  # Se for um caminho de arquivo (string)
-                    with open(pdf_file, 'rb') as f:
-                        pdf_bytes = f.read()
+        
+        q = Queue()
+
+        def worker():
+            try:
+                # Preparar os inputs para o modelo
+                inputs = []
                 
-                part = {"mime_type": "application/pdf", "data": pdf_bytes}
-                inputs.append(part)
-            
-            # Adicionar a pergunta como texto
-            inputs.append({"text": question})
-            
-            # Gerar resposta usando o modelo multimodal fornecido
-            response = model.generate_content(inputs)
-            
-            return response.text
-            
+                for pdf_file in pdf_files:
+                    if hasattr(pdf_file, 'read'):  # Se for um objeto de arquivo (como st.UploadedFile)
+                        pdf_bytes = pdf_file.getvalue() # Use getvalue() que é mais seguro
+                    else:  # Se for um caminho de arquivo (string)
+                        with open(pdf_file, 'rb') as f:
+                            pdf_bytes = f.read()
+                    
+                    part = {"mime_type": "application/pdf", "data": pdf_bytes}
+                    inputs.append(part)
+                
+                # Adicionar a pergunta como texto
+                inputs.append({"text": question})
+                
+                # Gerar resposta usando o modelo multimodal fornecido
+                response = model.generate_content(inputs)
+                
+                q.put(response.text)
+                
+            except Exception as e:
+                q.put(e)
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        
+        try:
+            # Espera por 120 segundos
+            result = q.get(timeout=120)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        except Empty:
+            st.error("A análise da IA excedeu o tempo limite (120s). Tente novamente.")
+            return None
         except Exception as e:
             st.error(f"Erro na comunicação com a API Gemini: {str(e)}")
             return None

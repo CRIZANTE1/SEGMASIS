@@ -7,6 +7,7 @@ from email.mime.multipart import MIMEMultipart
 from datetime import date, timedelta
 import pandas as pd
 import logging
+import gc
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -645,13 +646,16 @@ def send_smtp_email(html_body: str, config: dict, receiver_email: str, subject_s
     try:
         logger.info(f"Conectando ao servidor SMTP {config['smtp_server']}...")
         with smtplib.SMTP_SSL(config["smtp_server"], config["smtp_port"], context=context) as server:
-            logger.info("Fazendo login...")
+            logger.info("Fazendo login no SMTP...")
             server.login(config["sender_email"], config["sender_password"])
             logger.info(f"Enviando e-mail para {receiver_email}...")
             server.sendmail(config["sender_email"], receiver_email.split(','), message.as_string())
             logger.info(f"✅ E-mail enviado com sucesso para {receiver_email}!")
+    except smtplib.SMTPAuthenticationError:
+        logger.error("Falha de autenticação SMTP (credenciais inválidas)")
+        raise RuntimeError("Autenticação SMTP falhou") from None
     except Exception as e:
-        logger.error(f"❌ Falha ao enviar e-mail para {receiver_email}: {e}")
+        logger.error(f"❌ Falha ao enviar e-mail para {receiver_email}: {type(e).__name__}")
         raise
 
 def main():
@@ -670,11 +674,12 @@ def main():
             logger.warning("⚠️ Nenhuma unidade encontrada na matriz. Encerrando.")
             return
         
+        total_units = len(all_units)
         all_units_categorized_data = {}
         units_with_pendencies = {}
         successful_units = 0
         
-        for unit in all_units:
+        for i, unit in enumerate(all_units):
             unit_name = unit.get('nome_unidade')
             unit_id = unit.get('id') # ✅ USA O ID DO SUPABASE
             folder_id = unit.get('folder_id')
@@ -786,6 +791,14 @@ def main():
             except Exception as e:
                 logger.error(f"❌ Erro ao processar unidade '{unit_name}': {e}", exc_info=True)
                 continue
+            
+            finally:
+                if 'employee_manager' in locals():
+                    del employee_manager
+                if 'docs_manager' in locals():
+                    del docs_manager
+                gc.collect()
+                logger.info(f"Unidade {i+1}/{total_units} processada. Memória liberada.")
 
         if successful_units == 0:
             logger.error("❌ Nenhuma unidade processada com sucesso.")

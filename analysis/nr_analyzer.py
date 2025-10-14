@@ -45,26 +45,37 @@ def validate_managers(manager_dict: dict) -> Optional[str]:
             
     return None
 
-@st.cache_data(ttl=3600)
-def load_preprocessed_rag_base() -> tuple[Optional[pd.DataFrame], Optional[np.ndarray]]:
-    """
-    Carrega o DataFrame e os embeddings pré-processados de arquivos locais.
-    Esta função agora apenas carrega e retorna os dados, sem st.toast ou st.error.
-    
-    Returns:
-        Tupla contendo (DataFrame, array de embeddings) ou (None, None) em caso de erro
-    """
-    try:
-        df = pd.read_pickle("rag_dataframe.pkl")
-        embeddings = np.load("rag_embeddings.npy")
-        return df, embeddings
-    except FileNotFoundError:
-        return None, None
-    except Exception as e:
-        print(f"Falha ao carregar a base de conhecimento pré-processada: {e}")
-        return None, None
+
 
 class NRAnalyzer:
+    _rag_cache = None
+    _rag_cache_time = None
+    RAG_CACHE_TTL = 3600  # 1 hora
+    
+    @classmethod
+    def _get_rag_base(cls):
+        """Carrega RAG com cache de classe (não de sessão)"""
+        import time
+        
+        now = time.time()
+        
+        # Verifica se o cache ainda é válido
+        if (cls._rag_cache is not None and 
+            cls._rag_cache_time is not None and 
+            (now - cls._rag_cache_time) < cls.RAG_CACHE_TTL):
+            return cls._rag_cache
+        
+        # Carrega dados
+        try:
+            df = pd.read_pickle("rag_dataframe.pkl")
+            embeddings = np.load("rag_embeddings.npy")
+            cls._rag_cache = (df, embeddings)
+            cls._rag_cache_time = now
+            return cls._rag_cache
+        except Exception as e:
+            logger.error(f"Erro ao carregar RAG: {e}")
+            return None, None
+
     def __init__(self, unit_id: Optional[str], google_api_manager):
         """
         Inicialização que carrega a base RAG e lida com as mensagens de UI.
@@ -101,13 +112,20 @@ class NRAnalyzer:
                 raise ValueError("unit_id não pode ser None")
                 
             # Tenta inicializar o Supabase
-            self.supabase_ops = SupabaseOperations(unit_id=self.unit_id)
+            try:
+                self.supabase_ops = SupabaseOperations(unit_id=self.unit_id)
+                if not self.supabase_ops:
+                    raise RuntimeError("SupabaseOperations retornou None")
+            except Exception as e:
+                logger.error(f"Falha crítica ao inicializar Supabase: {e}")
+                self.supabase_ops = None  # Garante que está definido
+                raise
             
             # Inicializa o PDF Analyzer
             self._pdf_analyzer = PDFQA() if self.google_api_manager else None
             
             # Carrega os dados RAG
-            self.df, self.embeddings = load_preprocessed_rag_base()
+            self.df, self.embeddings = self._get_rag_base()
             
             # Valida todos os managers
             managers = {
@@ -143,27 +161,31 @@ class NRAnalyzer:
             return "Base de conhecimento indisponível ou não indexada."
 
         try:
-            # Gera embedding para a consulta usando TextEmbedding
-            model = GenerativeModel('embedding-001')
-            embedding_result = model.generate_content(contents=query_text).text
-            query_embedding = np.array(json.loads(embedding_result))
+            # ✅ CORREÇÃO: Usa a API correta
+            import google.generativeai as genai
             
-            # Calcula similaridade e pega os top_k mais relevantes
+            result = genai.embed_content(
+                model="models/text-embedding-004",
+                content=query_text,
+                task_type="retrieval_query"
+            )
+            
+            query_embedding = np.array(result['embedding']).reshape(1, -1)
+            
+            # Calcula similaridade
             similarities = cosine_similarity(query_embedding, self.embeddings)[0]
             top_k_indices = similarities.argsort()[-top_k:][::-1]
             relevant_chunks = self.df.iloc[top_k_indices]
             
-            # Formata e retorna os resultados
             if 'Answer_Chunk' not in relevant_chunks.columns:
-                logger.error("Coluna 'Answer_Chunk' não encontrada no DataFrame")
+                logger.error("Coluna 'Answer_Chunk' não encontrada")
                 return "Erro na estrutura da base de conhecimento"
             
             return "\n\n---\n\n".join(relevant_chunks['Answer_Chunk'].tolist())
             
         except Exception as e:
-            logger.error(f"Erro durante a busca semântica: {str(e)}")
-            st.warning(f"Erro durante a busca semântica (verifique a chave de API): {e}")
-            return "Erro ao buscar chunks relevantes na base de conhecimento."
+            logger.error(f"Erro durante busca semântica: {str(e)}")
+            return "Erro ao buscar chunks relevantes."
             
     def perform_initial_audit(self, doc_info: dict, file_content: bytes) -> dict | None:
         doc_type = doc_info.get("type", "documento")

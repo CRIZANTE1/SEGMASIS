@@ -3,7 +3,7 @@ import logging
 import os
 import tempfile
 from datetime import datetime, timedelta
-from operations.supabase_config import get_cached_supabase_client, get_bucket_name
+from managers.supabase_config import get_cached_supabase_client, get_bucket_name
 from supabase import StorageException
 
 logger = logging.getLogger('segsisone_app.supabase_storage')
@@ -14,11 +14,18 @@ class SupabaseStorageManager:
     def __init__(self, unit_id: str = None):
         """
         Inicializa o gerenciador de storage.
-        
+
         Args:
             unit_id: ID da unidade operacional (usado para organizar arquivos)
         """
-        self.supabase = get_cached_supabase_client()
+        try:
+            self.supabase = get_cached_supabase_client()
+            if not self.supabase:
+                raise ValueError("Cliente Supabase não inicializado")
+        except Exception as e:
+            logger.error(f"Falha ao inicializar SupabaseStorageManager: {e}")
+            raise RuntimeError(f"Supabase não disponível: {e}")
+
         self.unit_id = unit_id
         logger.info(f"SupabaseStorageManager inicializado para unit_id: {unit_id}")
     
@@ -106,20 +113,19 @@ class SupabaseStorageManager:
             URL assinada do arquivo
         """
         try:
-            # Tenta obter URL pública primeiro (se o bucket for público)
             public_url = self.supabase.storage.from_(bucket_name).get_public_url(file_path)
-            
-            if public_url:
+            if public_url and isinstance(public_url, str):
                 return public_url
-            
-            # Se não for público, gera URL assinada
+        except Exception as e:
+            logger.warning(f"Bucket não é público, gerando URL assinada: {e}")
+
+        # Sempre gera URL assinada como fallback
+        try:
             signed_url = self.supabase.storage.from_(bucket_name).create_signed_url(
                 path=file_path,
                 expires_in=expires_in
             )
-            
             return signed_url.get('signedURL', '')
-            
         except Exception as e:
             logger.error(f"❌ Erro ao gerar URL do arquivo: {e}")
             return ""

@@ -202,6 +202,10 @@ class MatrixManager:
 
     def get_required_trainings_for_function(self, function_name: str) -> list:
         """Retorna treinamentos obrigatórios para uma função."""
+        if not function_name or not isinstance(function_name, str):
+            logger.warning("Nome da função não fornecido ou inválido")
+            return []
+
         if self.functions_df.empty or self.matrix_df.empty:
             return []
         

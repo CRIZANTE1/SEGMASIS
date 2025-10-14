@@ -1,6 +1,7 @@
 import pandas as pd
 from operations.file_hash import calcular_hash_arquivo, verificar_hash_seguro
 import streamlit as st
+import threading
 from datetime import datetime, date, timedelta
 from managers.google_api_manager import GoogleApiManager
 from AI.api_Operation import PDFQA
@@ -51,6 +52,7 @@ logger = logging.getLogger('segsisone_app.employee_manager')
 from operations.supabase_operations import SupabaseOperations
 
 class EmployeeManager:
+    _load_lock = threading.Lock()
     def __init__(self, unit_id: str, folder_id: str = ""):  # Usando string vazia como padrão em vez de None
         logger.info(f"Inicializando EmployeeManager para unit_id: ...{unit_id[-6:]}")
         self.unit_id = unit_id
@@ -91,9 +93,9 @@ class EmployeeManager:
         """
         Faz o upload de um arquivo usando Supabase Storage e retorna o link.
         """
-        if not self.unit_id:
-            st.error("O ID da unidade não está definido. Não é possível fazer o upload.")
-            logger.error("Tentativa de upload sem unit_id definido")
+        if not self.unit_id or not self.unit_id.strip():
+            st.error("O ID da unidade não está definido ou é inválido.")
+            logger.error("Tentativa de upload sem unit_id válido")
             return None
         
         try:
@@ -140,39 +142,40 @@ class EmployeeManager:
 
     def load_data(self):
         """Carrega dados E cria índices"""
-        try:
-            # USA O NOVO CARREGADOR DO SUPABASE
-            data = load_all_unit_data(self.unit_id)
-            
-            self.companies_df = data['companies']
-            self.employees_df = data['employees']
-            self.aso_df = data['asos']
-            self.training_df = data['trainings']
-            
-            # ✅ CRIA ÍNDICES (acontece UMA VEZ no carregamento)
-            if not self.companies_df.empty:
-                # Índice por ID (busca O(1) em vez de O(n))
-                self.companies_df.set_index('id', inplace=True, drop=False)
-            
-            if not self.employees_df.empty:
-                self.employees_df.set_index('id', inplace=True, drop=False)
+        with self._load_lock:
+            try:
+                # USA O NOVO CARREGADOR DO SUPABASE
+                data = load_all_unit_data(self.unit_id)
                 
-                # ✅ Pré-agrupa por empresa (busca instantânea depois)
-                self._employees_by_company = self.employees_df.groupby('empresa_id')
-            
-            if not self.aso_df.empty:
-                # ✅ Pré-agrupa ASOs por funcionário
-                self._asos_by_employee = self.aso_df.groupby('funcionario_id')
-            
-            if not self.training_df.empty:
-                # ✅ Pré-agrupa treinamentos por funcionário
-                self._trainings_by_employee = self.training_df.groupby('funcionario_id')
-            
-            self.data_loaded_successfully = True
-            
-        except Exception as e:
-            logger.error(f"Erro: {e}", exc_info=True)
-            self.data_loaded_successfully = False
+                self.companies_df = data['companies']
+                self.employees_df = data['employees']
+                self.aso_df = data['asos']
+                self.training_df = data['trainings']
+                
+                # ✅ CRIA ÍNDICES (acontece UMA VEZ no carregamento)
+                if not self.companies_df.empty:
+                    # Índice por ID (busca O(1) em vez de O(n))
+                    self.companies_df.set_index('id', inplace=True, drop=False)
+                
+                if not self.employees_df.empty:
+                    self.employees_df.set_index('id', inplace=True, drop=False)
+                    
+                    # ✅ Pré-agrupa por empresa (busca instantânea depois)
+                    self._employees_by_company = self.employees_df.groupby('empresa_id')
+                
+                if not self.aso_df.empty:
+                    # ✅ Pré-agrupa ASOs por funcionário
+                    self._asos_by_employee = self.aso_df.groupby('funcionario_id')
+                
+                if not self.training_df.empty:
+                    # ✅ Pré-agrupa treinamentos por funcionário
+                    self._trainings_by_employee = self.training_df.groupby('funcionario_id')
+                
+                self.data_loaded_successfully = True
+                
+            except Exception as e:
+                logger.error(f"Erro: {e}", exc_info=True)
+                self.data_loaded_successfully = False
 
     def _parse_flexible_date(self, date_string: str) -> date | None:
         if not date_string or not isinstance(date_string, str) or date_string.lower() == 'n/a': return None
@@ -321,6 +324,8 @@ class EmployeeManager:
         new_data = {'nome': nome, 'cargo': cargo, 'data_admissao': format_date_safe(data_admissao), 'empresa_id': empresa_id, 'status': 'Ativo'}
         employee_id = self.supabase_ops.insert_row("employees", new_data)
         if employee_id:
+            from operations.cached_loaders import load_all_unit_data
+            load_all_unit_data.clear()
             self.load_data()
             return employee_id, "Funcionário adicionado com sucesso"
         return None, "Erro ao adicionar funcionário."
@@ -579,10 +584,14 @@ class EmployeeManager:
         vencimento = training_data.get('vencimento')
         
         # 2. VALIDAÇÃO 1: Campos obrigatórios e tipo correto
-        if not all([norma, 
-                   isinstance(data, (date, datetime)), 
-                   isinstance(vencimento, (date, datetime))]):
-            return False, "❌ Faltam campos obrigatórios ou datas inválidas"
+        if not norma or not isinstance(norma, str):
+            return False, "❌ Norma não fornecida ou inválida"
+
+        if not data or not isinstance(data, (date, datetime)):
+            return False, "❌ Data de realização inválida ou não fornecida"
+
+        if not vencimento or not isinstance(vencimento, (date, datetime)):
+            return False, "❌ Data de vencimento inválida ou não fornecida"
         
         # 3. VALIDAÇÃO 2: Data não pode ser futura
         hoje = date.today()
@@ -655,20 +664,25 @@ class EmployeeManager:
             }
             log_action("DELETE_ASO", details)
 
-        # ✅ USAR SUPABASE STORAGE
+        # 1. Deleta do banco PRIMEIRO
+        db_deleted = self.supabase_ops.delete_row("asos", aso_id)
+
+        if not db_deleted:
+            logger.error(f"Falha ao deletar registro de ASO {aso_id} do banco")
+            return False
+
+        # 2. Tenta deletar do storage (se falhar, não é crítico)
         if file_url and pd.notna(file_url):
             try:
                 from operations.supabase_storage import SupabaseStorageManager
                 storage_manager = SupabaseStorageManager(self.unit_id)
                 storage_manager.delete_file_by_url(file_url)
             except Exception as e:
-                logger.error(f"Erro ao deletar arquivo: {e}")
+                logger.warning(f"Arquivo órfão no storage: {file_url} - Erro: {e}")
         
-        if self.supabase_ops.delete_row("asos", aso_id):
-            st.cache_data.clear()
-            self.load_data()
-            return True
-        return False
+        st.cache_data.clear()
+        self.load_data()
+        return True
 
     def delete_training(self, training_id: str, file_url: str):
         """Deleta permanentemente um registro de treinamento e seu arquivo."""
@@ -684,20 +698,25 @@ class EmployeeManager:
             }
             log_action("DELETE_TRAINING", details)
 
-        # ✅ USAR SUPABASE STORAGE
+        # 1. Deleta do banco PRIMEIRO
+        db_deleted = self.supabase_ops.delete_row("trainings", training_id)
+
+        if not db_deleted:
+            logger.error(f"Falha ao deletar registro de Treinamento {training_id} do banco")
+            return False
+
+        # 2. Tenta deletar do storage (se falhar, não é crítico)
         if file_url and pd.notna(file_url):
             try:
                 from operations.supabase_storage import SupabaseStorageManager
                 storage_manager = SupabaseStorageManager(self.unit_id)
                 storage_manager.delete_file_by_url(file_url)
             except Exception as e:
-                logger.error(f"Erro ao deletar arquivo: {e}")
+                logger.warning(f"Arquivo órfão no storage: {file_url} - Erro: {e}")
 
-        if self.supabase_ops.delete_row("trainings", training_id):
-            st.cache_data.clear()
-            self.load_data()
-            return True
-        return False
+        st.cache_data.clear()
+        self.load_data()
+        return True
 
     def validar_treinamento(self, norma, modulo, tipo_treinamento, carga_horaria):
         """
