@@ -91,4 +91,75 @@ Esta página lista todas as pendências que precisam de atenção.
     -   Usar a IA para obter sugestões de treinamentos com base no nome de uma função.
 
 ---
-**Próximo Documento:** [FAQ - Perguntas Frequentes](./FAQ.md)
+# 🛂 Controle de Acesso (RBAC)
+
+## 1. Visão Geral
+
+O SEGMA-SIS utiliza um modelo de **Controle de Acesso Baseado em Papel (RBAC - Role-Based Access Control)** para gerenciar o que cada usuário pode ver e fazer dentro do sistema. Este modelo é simples, mas eficaz, garantindo que os usuários tenham acesso apenas às funcionalidades necessárias para suas funções, seguindo o **princípio do menor privilégio**.
+
+A `role` (papel) de um usuário é a principal autoridade que define suas permissões.
+
+## 2. Definição dos Papéis (`Roles`)
+
+Existem três papéis definidos no sistema, armazenados na coluna `role` da tabela `public.usuarios`.
+
+### a) `admin` (Administrador)
+-   **Descrição:** O nível de permissão mais alto. Geralmente reservado para gestores do sistema ou da área de SST corporativa.
+-   **Privilégios:**
+    -   **Visão Global:** Pode visualizar os dados consolidados de **todas as unidades operacionais**.
+    -   **Troca de Contexto:** Pode operar "como se estivesse" em qualquer unidade específica, selecionando-a no menu lateral.
+    -   **Gestão de Usuários:** Pode adicionar, editar e remover usuários do sistema.
+    -   **Gestão de Unidades:** Pode provisionar novas unidades operacionais.
+    -   **Acesso Total:** Possui permissões de leitura e escrita (`editor`) em todas as unidades.
+    -   **Logs:** Acesso completo aos logs de auditoria do sistema.
+
+### b) `editor` (Editor)
+-   **Descrição:** O papel padrão para os usuários que gerenciam ativamente a documentação de uma unidade (ex: técnicos de segurança, analistas de SST).
+-   **Privilégios:**
+    -   **Acesso Restrito à Unidade:** Pode ver e interagir **apenas** com os dados da sua `unidade_associada`. O isolamento é garantido por RLS.
+    -   **Leitura e Escrita:** Pode visualizar, adicionar, editar e excluir todos os tipos de registros (empresas, funcionários, documentos) dentro da sua unidade.
+    -   **Plano de Ação:** Pode tratar e atualizar os itens do plano de ação da sua unidade.
+    -   **Sem Acesso Global:** Não pode ver dados de outras unidades nem acessar as funcionalidades de gerenciamento global.
+
+### c) `viewer` (Visualizador)
+-   **Descrição:** Um papel de "somente leitura", ideal for gestores, auditores externos ou clientes que precisam consultar o status de conformidade sem poder alterar nada.
+-   **Privilégios:**
+    -   **Acesso Restrito à Unidade:** Pode visualizar **apenas** os dados da sua `unidade_associada`.
+    -   **Somente Leitura:** Pode navegar pelo dashboard, visualizar documentos e o plano de ação, mas **não verá** botões para adicionar, editar ou excluir registros.
+    -   **Sem Permissões de Escrita:** Qualquer tentativa de modificar dados será bloqueada tanto na interface quanto na camada de banco de dados.
+
+## 3. Implementação Técnica
+
+O controle de acesso é implementado em duas camadas principais:
+
+### Camada de Aplicação (Frontend)
+-   **Arquivo:** `auth/auth_utils.py`
+-   **Funções Chave:**
+    -   `get_user_role() -> str`: Retorna a `role` do usuário logado, lida do `st.session_state`.
+    -   `check_permission(level='editor')`: Uma função de "guarda". Ela é chamada no início de páginas ou seções que exigem um certo nível de permissão. Se o usuário não atender ao requisito, a função exibe uma mensagem de erro e interrompe a execução da página com `st.stop()`.
+
+    ```python
+    # Exemplo de uso em front/administracao.py
+    import streamlit as st
+    from auth.auth_utils import check_permission
+
+    def show_admin_page():
+        # Esta linha bloqueia o acesso a qualquer usuário que não seja 'admin'
+        if not check_permission(level='admin'):
+            st.stop() # A execução da página para aqui
+
+        st.title("Painel de Administração")
+        # ... resto do código da página ...
+    ```
+
+### Camada de Banco de Dados (Backend)
+-   **Tecnologia:** Políticas de Row Level Security (RLS) no Supabase/PostgreSQL.
+-   **Lógica:** As políticas de RLS no banco de dados espelham a lógica das `roles`.
+    -   Políticas de `INSERT`, `UPDATE`, `DELETE` geralmente contêm uma verificação para garantir que o usuário tenha a `role` de `admin` ou `editor`. Usuários com `role` de `viewer` serão bloqueados pelo banco de dados se tentarem realizar uma operação de escrita, adicionando uma camada extra de segurança.
+-   Consulte o documento [RLS Policies](./RLS_POLICIES.md) para os detalhes do SQL.
+
+## 4. Gerenciamento de Papéis
+
+O gerenciamento de papéis (atribuir, alterar ou remover a `role` de um usuário) é uma tarefa administrativa e só pode ser realizada por um usuário com a `role` de **`admin`** através da página de **Administração**, na seção de "Gerenciamento Global".
+
+---
