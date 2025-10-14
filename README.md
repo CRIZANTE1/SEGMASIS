@@ -1,76 +1,65 @@
-# Sistema de Gestão Inteligente para Contratadas (SEGMA-SIS)
+# 📚 Documentação do SEGMA-SIS
 
-![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow)
-![Tecnologia](https://img.shields.io/badge/backend-Python%20%7C%20Streamlit-blue)
-![IA](https://img.shields.io/badge/IA-Google%20Gemini-orange)
+**Sistema de Gestão Inteligente para Contratadas**
 
-**Automatize a conformidade, reduza riscos e gerencie a documentação de seus prestadores de serviço com o poder da Inteligência Artificial.**
+Bem-vindo à documentação central do SEGMA-SIS. Esta pasta contém todos os guias técnicos, de arquitetura e operacionais necessários para entender, desenvolver, manter e utilizar o sistema de forma eficaz.
 
----
+## 📑 Índice de Documentos
 
-## O Problema
+### 🚀 Começando
+- **[Instalação e Configuração](./INSTALLATION.md):** Guia passo a passo para configurar o ambiente de desenvolvimento local.
+- **[Guia de Início Rápido](./QUICKSTART.md):** Execute a aplicação pela primeira vez em menos de 5 minutos.
+- **[Requisitos do Sistema](./REQUIREMENTS.md):** Software e hardware necessários para rodar o projeto.
 
-Gerenciar a documentação de Saúde e Segurança do Trabalho (SST) de empresas contratadas é um desafio complexo, manual e propenso a falhas. Controlar vencimentos de ASOs, validar certificados de NRs e garantir a conformidade de PGRs e PCMSOs consome tempo, recursos e expõe a empresa a riscos legais e operacionais significativos.
+### 🏗️ Arquitetura
+- **[Visão Geral da Arquitetura](./ARCHITECTURE.md):** Um olhar aprofundado sobre os componentes do sistema e como eles interagem.
+- **[Estrutura de Pastas](./FOLDER_STRUCTURE.md):** Descrição do propósito de cada diretório e arquivo principal.
+- **[Diagrama de Fluxo de Dados](./DATA_FLOW.md):** Ilustração dos principais fluxos de dados, como o upload de um documento.
 
-## A Solução: SEGMA-SIS
+### 🔧 Desenvolvimento
+- **[Guia de Contribuição](./CONTRIBUTING.md):** Como contribuir com o projeto, incluindo fluxo de trabalho de git e padrões de pull request.
+- **[Padrões de Código](./CODE_STANDARDS.md):** Diretrizes de estilo, linting e boas práticas adotadas no projeto.
+- **[API Reference](./API_REFERENCE.md):** Documentação das principais classes e métodos (Managers, Operations, etc.).
 
-O **SEGMA-SIS** é uma plataforma inteligente que centraliza e automatiza a gestão de documentos de SST de contratadas. Utilizando a IA avançada do Google Gemini, o sistema não apenas armazena documentos, mas os analisa, audita e transforma dados em ações, garantindo um novo nível de controle e segurança.
+### 🗄️ Banco de Dados
+- **[Schema do Supabase](./DATABASE_SCHEMA.md):** Descrição detalhada de todas as tabelas, colunas e relacionamentos.
+- **[Políticas RLS](./RLS_POLICIES.md):** Explicação das políticas de segurança em nível de linha que garantem o isolamento de dados (multi-tenant).
+- **[Migrações](./MIGRATIONS.md):** Histórico e guia para execução de scripts de migração de schema.
 
----
+### 🤖 Inteligência Artificial
+- **[Sistema RAG](./RAG_SYSTEM.md):** Detalhes sobre a implementação do Retrieval-Augmented Generation para auditorias.
+- **[Engenharia de Prompts](./AI_PROMPTS.md):** Catálogo dos principais prompts utilizados para extração e auditoria.
+- **[Modelos Utilizados](./AI_MODELS.md):** Especificações dos modelos do Google Gemini e suas responsabilidades.
 
-## Principais Funcionalidades
+### 📋 Operacional
+- **[Manual do Usuário](./USER_MANUAL.md):** Guia não técnico para usuários finais sobre como operar o sistema.
+- **[FAQ - Perguntas Frequentes](./FAQ.md):** Respostas para as dúvidas mais comuns.
+- **[Troubleshooting](./TROUBLESHOOTING.md):** Como diagnosticar e resolver problemas comuns.
 
-*   **🗂️ Central de Documentos:** Um repositório único e organizado para toda a documentação de empresas, funcionários, ASOs, treinamentos e fichas de EPI.
+### 🔐 Segurança
+- **[Políticas de Segurança](./SECURITY.md):** Visão geral das medidas de segurança implementadas.
+- **[Gestão de Secrets](./SECRETS_MANAGEMENT.md):** Procedimento correto para gerenciar chaves de API e credenciais.
+- **[Controle de Acesso](./ACCESS_CONTROL.md):** Detalhes sobre os papéis (roles) de usuário e suas permissões.
 
-*   **🧠 Análise Inteligente com IA:** Faça o upload de um PDF e deixe a IA trabalhar. O sistema extrai automaticamente informações cruciais como datas de emissão, vencimentos, nomes, tipos de exame e cargas horárias, eliminando a digitação manual.
+### 📊 Regras de Negócio
+- **[Matriz de NRs](./NR_MATRIX.md):** Tabela de Normas Regulamentadoras cobertas pelo sistema.
+- **[Validação de Carga Horária](./CH_VALIDATION.md):** Regras de negócio para validar a carga horária de treinamentos.
+- **[Regras de Vencimento](./EXPIRATION_RULES.md):** Lógica para o cálculo de vencimento de documentos e treinamentos.
 
-*   **⚖️ Auditoria de Conformidade Automatizada:** No momento do upload, cada documento é submetido a uma auditoria instantânea. Usando uma base de conhecimento (RAG), a IA verifica se o documento atende aos requisitos normativos (NRs) e aponta inconsistências, como cargas horárias insuficientes ou datas inválidas.
+## 🌐 Links Úteis
 
-*   **📋 Geração Automática de Plano de Ação:** Uma não conformidade foi encontrada? O SEGMA-SIS cria automaticamente um item no Plano de Ação, vinculando o problema ao documento e ao funcionário, garantindo que nenhuma pendência seja esquecida.
+- **Sistema em Produção:** [https://segma-sis.streamlit.app](https://segma-sis.streamlit.app)
+- **Painel do Supabase:** [https://supabase.com/dashboard](https://supabase.com/dashboard)
+- **Google AI Studio (Gemini):** [https://aistudio.google.com/](https://aistudio.google.com/)
 
-*   **🗓️ Dashboard de Gestão:** Visualize o status de todos os documentos e funcionários de uma empresa em uma única tela. Monitore vencimentos, trate pendências e consulte o histórico completo de auditorias com status de tratamento.
+## 📞 Suporte
 
-*   **📧 Notificador Automático de Vencimentos:** Um sistema proativo envia relatórios por e-mail, alertando sobre documentos vencidos ou próximos do vencimento, permitindo ações preventivas.
-
----
-
-## Demonstração Visual
-
-**1. Upload e Análise Instantânea**
-`![GIF de Análise de ASO](link_para_seu_gif_1.gif)`
-
-**2. Auditoria e Criação de Plano de Ação**
-`![GIF de Auditoria e Plano de Ação](link_para_seu_gif_2.gif)`
-
-**3. Gestão e Tratamento de Pendências**
-`![GIF de Tratamento de Pendência](link_para_seu_gif_3.gif)`
-
----
-
-## Tecnologias Utilizadas
-
-*   **Frontend:** Streamlit
-*   **Backend & Lógica de Negócio:** Python
-*   **Inteligência Artificial:** Google Gemini (para extração e RAG)
-*   **Banco de Dados:** Google Sheets
-*   **Armazenamento de Arquivos:** Google Drive
-
----
-
-## Contato e Demonstração
-
-Este é um projeto proprietário e não está disponível para uso público ou redistribuição.
-
-Para uma **demonstração ao vivo** ou para discutir como o SEGMA-SIS pode ser adaptado para as necessidades da sua empresa, entre em contato:
-
-*   **Autor:** Cristian Ferreira Carlos
-*   **LinkedIn:** [https://www.linkedin.com/in/cristian-ferreira-carlos-256b19161/](https://www.linkedin.com/in/cristian-ferreira-carlos-256b19161/)
-*   **E-mail:** cristianfc2015@hotmail.com
+Para suporte técnico ou dúvidas, contate:
+- **Autor:** Cristian Ferreira Carlos
+- **E-mail:** cristianfc2015@hotmail.com
+- **LinkedIn:** [https://www.linkedin.com/in/cristian-ferreira-carlos-256b19161/](https://www.linkedin.com/in/cristian-ferreira-carlos-256b19161/)
 
 ---
+*Esta documentação é um documento vivo e deve ser atualizada conforme o sistema evolui.*
 
-## Licença de Uso
-
-Este software é uma propriedade intelectual de Cristian Ferreira Carlos. Todos os direitos são reservados.
-
-É estritamente proibido o uso, cópia, modificação, fusão, publicação, distribuição, sublicenciamento e/ou venda de cópias do Software sem a permissão expressa e por escrito do autor. Para mais detalhes, consulte o arquivo `LICENSE.txt`.
+**Última Atualização:** 24 de Maio de 2024
