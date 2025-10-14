@@ -127,8 +127,8 @@ def _get_advanced_audit_prompt(doc_info, relevant_knowledge):
 
 | Tarefa | Modelo | Justificativa |
 |--------|--------|---------------|
-| Extrair dados ASO | `gemini-1.5-flash` | Rápido e preciso |
-| Auditar PGR | `gemini-1.5-pro` | Raciocínio complexo |
+| Extrair dados ASO | `gemini-2.5-flash` | Rápido e preciso |
+| Auditar PGR | `gemini-2.5-pro` | Raciocínio complexo |
 | Vetorizar NR | `text-embedding-004` | Otimizado para RAG |
 
 ---
