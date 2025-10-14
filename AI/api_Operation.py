@@ -103,27 +103,3 @@ class PDFQA:
         except Exception as e:
             st.error(f"Erro na comunicação com a API Gemini: {str(e)}")
             return None
-
-
-   
-
-
-
-
-
-
-   
-
-
-
-
-
-   
-
-
-
-
-   
-
-
-
