@@ -7,7 +7,6 @@ from operations.cached_loaders import load_action_plan_df
 
 class ActionPlanManager:
     def __init__(self, unit_id: str):
-        # ✅ VALIDAÇÃO DE ENTRADA
         if not unit_id or unit_id == 'None' or str(unit_id).strip() == '':
             logger.error("ActionPlanManager inicializado sem unit_id válido")
             raise ValueError("unit_id não pode ser vazio")
@@ -27,7 +26,7 @@ class ActionPlanManager:
         self.load_data()
 
     def load_data(self):
-        """Carrega os dados do plano de ação."""
+        """Carrega os dados do plano de ação e padroniza os IDs para string."""
         try:
             self.action_plan_df = load_action_plan_df(self.unit_id)
             
@@ -39,6 +38,13 @@ class ActionPlanManager:
                 logger.info("Tabela 'plano_acao' está vazia para esta unidade")
                 self.data_loaded_successfully = True
             else:
+                # ✅ CORREÇÃO PREVENTIVA: Converte todas as colunas de ID para string.
+                id_cols = ['id', 'id_empresa', 'id_funcionario']
+                for col in id_cols:
+                    if col in self.action_plan_df.columns:
+                        # Usa .astype(str) para converter a coluna inteira de uma vez.
+                        self.action_plan_df[col] = self.action_plan_df[col].astype(str)
+
                 logger.info(f"✅ {len(self.action_plan_df)} item(ns) do plano de ação carregado(s)")
                 self.data_loaded_successfully = True
         
@@ -72,19 +78,19 @@ class ActionPlanManager:
             'data_conclusao': None
         }
         
-        result = self.supabase_ops.insert_row("plano_acao", new_data)
+        new_item_id = self.supabase_ops.insert_row("plano_acao", new_data)
         
-        if result:
+        if new_item_id:
             st.toast(f"Item de ação '{item_title}' criado com sucesso!", icon="✅")
             log_action("CREATE_ACTION_ITEM", {
-                "item_id": result['id'], 
+                "item_id": new_item_id, 
                 "company_id": company_id,
                 "original_doc_id": doc_id,
                 "employee_id": employee_id if employee_id else "N/A",
                 "description": full_description
             })
             self.load_data()
-            return result['id']
+            return new_item_id
         else:
             st.error("Falha crítica: Não foi possível salvar o item no Plano de Ação.")
             return None
