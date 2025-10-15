@@ -289,6 +289,7 @@ class EmployeeManager:
         company_id = self.supabase_ops.insert_row("empresas", new_data)
         if company_id:
             self.load_data()
+            # ✅ CORREÇÃO: Retorna o ID diretamente, sem tentar acessar ['id']
             return company_id, "Empresa cadastrada com sucesso"
         return None, "Falha ao obter ID da empresa."
 
@@ -297,6 +298,7 @@ class EmployeeManager:
         employee_id = self.supabase_ops.insert_row("funcionarios", new_data)
         if employee_id:
             self.load_data()
+            # ✅ CORREÇÃO: Retorna o ID diretamente, sem tentar acessar ['id']
             return employee_id, "Funcionário adicionado com sucesso"
         return None, "Erro ao adicionar funcionário."
 
