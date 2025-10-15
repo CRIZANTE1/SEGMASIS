@@ -3,6 +3,7 @@ import logging
 import os
 import tempfile
 from datetime import datetime, timedelta
+from operations.file_utils import infer_doc_type
 from managers.supabase_config import get_cached_supabase_client, get_bucket_name
 from supabase import StorageException
 
@@ -138,6 +139,53 @@ class SupabaseStorageManager:
         except Exception as e:
             logger.error(f"❌ Erro ao gerar URL do arquivo: {e}")
             return ""
+
+    def upload_file_simple(
+        self, 
+        arquivo, 
+        novo_nome: str = None
+    ) -> str | None:
+        """
+        Interface simplificada para upload compatível com código legado.
+        
+        Args:
+            arquivo: Objeto de arquivo do Streamlit (UploadedFile)
+            novo_nome: Nome customizado para o arquivo
+            
+        Returns:
+            URL do arquivo ou None em caso de erro
+        """
+        from operations.file_utils import infer_doc_type
+        
+        if not self.unit_id:
+            logger.error("unit_id não definido para upload")
+            return None
+        
+        try:
+            # Determina o nome do arquivo
+            filename = novo_nome if novo_nome else arquivo.name
+            
+            # Infere o tipo de documento
+            doc_type = infer_doc_type(filename)
+            
+            # Faz o upload
+            result = self.upload_file(
+                file_content=arquivo.getvalue(),
+                filename=filename,
+                doc_type=doc_type,
+                content_type=arquivo.type
+            )
+            
+            if result and 'url' in result:
+                logger.info(f"✅ Upload bem-sucedido: {filename}")
+                return result['url']
+            
+            logger.error(f"❌ Upload falhou para: {filename}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Erro no upload simplificado: {e}", exc_info=True)
+            return None
     
     def delete_file(self, file_path: str, bucket_name: str = None) -> bool:
         """
@@ -355,7 +403,7 @@ class SupabaseUploader:
             progress_bar.progress(30, text="Determinando tipo de documento...")
             
             # Determina o tipo de documento pelo nome
-            doc_type = GoogleApiManager._infer_doc_type(filename)
+            doc_type = infer_doc_type(filename)
             
             progress_bar.progress(50, text="Enviando para o servidor...")
             

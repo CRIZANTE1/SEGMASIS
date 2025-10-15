@@ -32,20 +32,14 @@ class CompanyDocsManager:
             return None
         
         try:
-            result = self.storage_manager.upload_file(
-                file_content=arquivo.getvalue(),
-                filename=novo_nome,
-                doc_type='doc_empresa',
-                content_type=arquivo.type
-            )
+            from managers.supabase_storage import SupabaseStorageManager
             
-            if result and 'url' in result:
-                return result['url']
-            else:
-                logger.error(f"Upload falhou: resultado = {result}")
-                st.error("Falha no upload do documento")
-                return None
-                
+            storage_manager = SupabaseStorageManager(self.unit_id)
+            
+            logger.info(f"Iniciando upload de documento: '{novo_nome}'")
+            
+            return storage_manager.upload_file_simple(arquivo, novo_nome)
+            
         except Exception as e:
             logger.error(f"Erro ao fazer upload: {e}", exc_info=True)
             st.error(f"Erro ao fazer upload: {str(e)}")

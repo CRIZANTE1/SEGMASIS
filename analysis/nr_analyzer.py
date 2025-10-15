@@ -28,7 +28,7 @@ def validate_managers(manager_dict: dict) -> Optional[str]:
     Returns:
         None se tudo estiver ok, ou mensagem de erro se houver problema.
     """
-    required_managers = ['supabase_ops', 'google_api_manager', 'pdf_analyzer']
+    required_managers = ['supabase_ops', 'pdf_analyzer']
     
     # Verifica se todos os managers necessários estão presentes
     for manager in required_managers:
@@ -76,16 +76,14 @@ class NRAnalyzer:
             logger.error(f"Erro ao carregar RAG: {e}")
             return None, None
 
-    def __init__(self, unit_id: Optional[str], google_api_manager):
+    def __init__(self, unit_id: Optional[str]):
         """
         Inicialização que carrega a base RAG e lida com as mensagens de UI.
         
         Args:
             unit_id: ID da unidade para operações com Supabase
-            google_api_manager: Manager do Google API para manipulação de PDFs
         """
         self.unit_id = unit_id
-        self.google_api_manager = google_api_manager
         
         # Managers
         self._pdf_analyzer = None
@@ -122,7 +120,7 @@ class NRAnalyzer:
                 raise
             
             # Inicializa o PDF Analyzer
-            self._pdf_analyzer = PDFQA() if self.google_api_manager else None
+            self._pdf_analyzer = PDFQA()
             
             # Carrega os dados RAG
             self.df, self.embeddings = self._get_rag_base()
@@ -130,7 +128,6 @@ class NRAnalyzer:
             # Valida todos os managers
             managers = {
                 'supabase_ops': self.supabase_ops,
-                'google_api_manager': self.google_api_manager,
                 'pdf_analyzer': self._pdf_analyzer
             }
             

@@ -2,6 +2,7 @@ import streamlit as st
 from datetime import date
 import pandas as pd
 import logging
+from fuzzywuzzy import process
 
 from auth.auth_utils import check_permission
 from ui.ui_helpers import (
@@ -396,14 +397,18 @@ def show_dashboard_page():
                                                         missing.append(req)
                                                     continue
                                                 
-                                                # Verifica match exato ou fuzzy (score > 85)
                                                 has_match = any(
                                                     req_lower == comp or 
                                                     req_lower in comp or 
-                                                    comp in req_lower or
-                                                    fuzz.ratio(req_lower, comp) > 85
+                                                    comp in req_lower
                                                     for comp in completed_trainings
                                                 )
+
+                                                # Se não houver match direto, tenta fuzzy matching
+                                                if not has_match and completed_trainings:
+                                                    best_match = process.extractOne(req_lower, completed_trainings)
+                                                    if best_match and best_match[1] > 85:  # score > 85
+                                                        has_match = True
                                                 
                                                 if not has_match:
                                                     missing.append(req)

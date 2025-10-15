@@ -9,8 +9,9 @@ logger = logging.getLogger('segsisone_app.api_manager')
 
 class GoogleApiManager:
     """
-    Classe refatorada para usar Supabase Storage ao invés do Google Drive.
-    Mantém a mesma interface para compatibilidade com código legado.
+    DEPRECATED: Esta classe está sendo gradualmente removida.
+    Use SupabaseStorageManager para operações de storage.
+    Mantida apenas para compatibilidade temporária.
     """
     
     def __init__(self):
@@ -78,21 +79,7 @@ class GoogleApiManager:
         
         return self.storage_manager.delete_file_by_url(file_url)
     
-    @staticmethod
-    def _infer_doc_type(filename: str) -> str:
-        """Infere o tipo de documento pelo nome do arquivo."""
-        filename_lower = filename.lower()
-        
-        if 'aso' in filename_lower:
-            return 'aso'
-        elif 'training' in filename_lower or 'treinamento' in filename_lower:
-            return 'treinamento'
-        elif 'epi' in filename_lower:
-            return 'epi'
-        elif any(doc in filename_lower for doc in ['pgr', 'pcmso', 'ppr', 'pca']):
-            return 'doc_empresa'
-        
-        return 'aso'  # Default
+
     
     # Métodos legados do Google Drive que não são mais necessários
     # mas mantidos para compatibilidade
@@ -100,17 +87,13 @@ class GoogleApiManager:
     def create_folder(self, name: str, parent_folder_id: str = None):
         """
         [DEPRECATED] Folders não são mais usados com Supabase Storage.
-        Este método foi mantido apenas para compatibilidade com código legado.
         """
-        logger.error(f"create_folder() foi chamado para '{name}'. Este método está obsoleto e não deve ser usado.")
-        st.warning("⚠️ Tentativa de criar pasta no Google Drive detectada. Este recurso foi desativado.")
-        return None
+        logger.error(f"create_folder() foi chamado para '{name}'. Este método está DEPRECATED.")
+        raise DeprecationWarning("Método create_folder() foi removido. Use Supabase Storage.")
 
     def move_file_to_folder(self, file_id: str, folder_id: str):
         """
         [DEPRECATED] Não implementado no Supabase Storage.
-        Este método foi mantido apenas para compatibilidade com código legado.
         """
-        logger.error(f"move_file_to_folder() foi chamado. Este método está obsoleto.")
-        st.warning("⚠️ Tentativa de mover arquivo no Google Drive detectada. Este recurso foi desativado.")
-        return False
+        logger.error(f"move_file_to_folder() foi chamado. Este método está DEPRECATED.")
+        raise DeprecationWarning("Método move_file_to_folder() foi removido. Use Supabase Storage.")

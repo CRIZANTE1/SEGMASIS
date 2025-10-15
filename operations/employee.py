@@ -2,7 +2,7 @@ import pandas as pd
 from operations.file_hash import calcular_hash_arquivo, verificar_hash_seguro
 import streamlit as st
 from datetime import datetime, date, timedelta
-from managers.google_api_manager import GoogleApiManager
+from operations.file_utils import infer_doc_type
 from AI.api_Operation import PDFQA
 from operations.sheet import SheetOperations
 import tempfile
@@ -51,7 +51,7 @@ class EmployeeManager:
         }
         self.nr_config = {
             'NR-35': {'inicial_horas': 8, 'reciclagem_horas': 8, 'reciclagem_anos': 2},
-            'NR-10': {'inicial_horas': 20, 'reciclagem_horas': 20, 'reciclagem_anos': 2},
+            'NR-10': {'inicial_horas': 40, 'reciclagem_horas': 40, 'reciclagem_anos': 2},
             'NR-18': {'inicial_horas': 8, 'reciclagem_horas': 8, 'reciclagem_anos': 1},
             'NR-06': {'inicial_horas': 3, 'reciclagem_horas': 3, 'reciclagem_anos': 10},
             'NR-12': {'inicial_horas': 8, 'reciclagem_horas': 8, 'reciclagem_anos': 5},
@@ -70,50 +70,26 @@ class EmployeeManager:
         if self._pdf_analyzer is None: self._pdf_analyzer = PDFQA()
         return self._pdf_analyzer
 
-    def _infer_doc_type(self, filename: str) -> str:
-        """Infere o tipo de documento pelo nome do arquivo."""
-        filename_lower = filename.lower()
-        
-        if 'aso' in filename_lower:
-            return 'aso'
-        elif 'training' in filename_lower or 'treinamento' in filename_lower:
-            return 'treinamento'
-        elif 'epi' in filename_lower:
-            return 'epi'
-        elif any(doc in filename_lower for doc in ['pgr', 'pcmso', 'ppr', 'pca']):
-            return 'doc_empresa'
-        
-        return 'aso'  # Default
+
 
     def upload_documento_e_obter_link(self, arquivo, novo_nome: str):
         """
         Faz o upload de um arquivo usando Supabase Storage e retorna o link.
         """
         if not self.unit_id:
-            st.error("O ID da unidade não está definido. Não é possível fazer o upload.")
+            st.error("O ID da unidade não está definido.")
             logger.error("Tentativa de upload sem unit_id definido")
             return None
         
         try:
             from managers.supabase_storage import SupabaseStorageManager
+            
             storage_manager = SupabaseStorageManager(self.unit_id)
             
-            # Determina o tipo de documento pelo nome
-            doc_type = GoogleApiManager._infer_doc_type(novo_nome)
+            logger.info(f"Iniciando upload: '{novo_nome}' para unidade ...{self.unit_id[-6:]}")
             
-            logger.info(f"Iniciando upload do documento '{novo_nome}' para a unidade: ...{self.unit_id[-6:]}")
+            return storage_manager.upload_file_simple(arquivo, novo_nome)
             
-            result = storage_manager.upload_file(
-                file_content=arquivo.getvalue(),
-                filename=novo_nome,
-                doc_type=doc_type,
-                content_type=arquivo.type
-            )
-            
-            if result and 'url' in result:
-                return result['url']
-            
-            return None
         except ImportError as e:
             logger.error(f"Módulo SupabaseStorageManager não encontrado: {e}")
             st.error("❌ Erro de configuração do sistema")
@@ -803,14 +779,12 @@ class EmployeeManager:
         if norma_padronizada in self.nr_config:
             config = self.nr_config[norma_padronizada]
             
-            # Verifica a carga horária de formação (inicial)
-            if tipo_treinamento == 'formação' and 'inicial_horas' in config:
-                if carga_horaria < config['inicial_horas']:
+            # ✅ CORREÇÃO: Valida tanto formação quanto reciclagem
+            if tipo_treinamento == 'formação':
+                if 'inicial_horas' in config and carga_horaria < config['inicial_horas']:
                     return False, f"Carga horária para formação ({norma_padronizada}) deve ser de {config['inicial_horas']}h, mas foi de {carga_horaria}h."
-            
-            # Verifica a carga horária de reciclagem
-            elif tipo_treinamento == 'reciclagem' and 'reciclagem_horas' in config:
-                if carga_horaria < config['reciclagem_horas']:
+            elif tipo_treinamento == 'reciclagem':
+                if 'reciclagem_horas' in config and carga_horaria < config['reciclagem_horas']:
                     return False, f"Carga horária para reciclagem ({norma_padronizada}) deve ser de {config['reciclagem_horas']}h, mas foi de {carga_horaria}h."
 
         # --- Lógicas Específicas e Complexas ---
