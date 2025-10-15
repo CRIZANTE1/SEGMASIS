@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import date
 from operations.supabase_operations import SupabaseOperations
 from operations.audit_logger import log_action, logger
-from operations.cached_loaders import load_action_plan_df
+from operations.cached_loaders import load_all_unit_data
 
 class ActionPlanManager:
     def __init__(self, unit_id: str):
@@ -28,7 +28,8 @@ class ActionPlanManager:
     def load_data(self):
         """Carrega os dados do plano de ação e padroniza os IDs para string."""
         try:
-            self.action_plan_df = load_action_plan_df(self.unit_id)
+            all_unit_data = load_all_unit_data(self.unit_id)
+            self.action_plan_df = all_unit_data.get("action_plan", pd.DataFrame(columns=self.columns))
             
             if self.action_plan_df is None:
                 logger.warning("load_action_plan_df retornou None")
