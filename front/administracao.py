@@ -12,8 +12,7 @@ from operations.cached_loaders import load_all_unit_data
 
 logger = logging.getLogger('segsisone_app.administracao')
 
-@st.cache_data(ttl=300)
-def load_aggregated_data():
+@st.cache_data(ttl=300)def load_aggregated_data():
     """
     Carrega e agrega dados de TODAS as unidades, incluindo a conversão e tratamento
     de colunas de data. Retorna uma tupla de 5 DataFrames limpos.
@@ -172,9 +171,10 @@ def display_global_summary_dashboard(companies_df, employees_df, asos_df, traini
             trainings_actives.dropna(subset=['vencimento'], inplace=True)
             
             if not trainings_actives.empty:
+                # ✅ MUDANÇA: Agrupa por norma E módulo para tratar cada treinamento de forma única
                 latest_trainings = trainings_actives.sort_values(
                     'data', ascending=False
-                ).groupby(['funcionario_id', 'norma']).head(1).copy()
+                ).groupby(['funcionario_id', 'norma', 'modulo']).head(1).copy()
                 
                 # ✅ CORREÇÃO: Verifica se há datas válidas
                 latest_trainings_valid = latest_trainings[
@@ -366,8 +366,7 @@ def display_global_summary_dashboard(companies_df, employees_df, asos_df, traini
     else:
         st.info(f"Nenhuma pendência encontrada na unidade '{most_critical_unit}'.")
         
-@st.dialog("Gerenciar Usuário")
-def user_dialog(user_data=None):
+@st.dialog("Gerenciar Usuário")def user_dialog(user_data=None):
     is_edit_mode = user_data is not None
     title = "Editar Usuário" if is_edit_mode else "Adicionar Novo Usuário"
     st.subheader(title)
@@ -416,8 +415,7 @@ def user_dialog(user_data=None):
                         st.error("Falha ao adicionar usuário.")
 
 # --- DIÁLOGO PARA CONFIRMAR EXCLUSÃO ---
-@st.dialog("Confirmar Exclusão")
-def confirm_delete_dialog(user_id, user_email):
+@st.dialog("Confirmar Exclusão")def confirm_delete_dialog(user_id, user_email):
     st.warning(f"Você tem certeza que deseja remover permanentemente o usuário **{user_email}**?")
     st.caption("Esta ação não pode ser desfeita.")
     

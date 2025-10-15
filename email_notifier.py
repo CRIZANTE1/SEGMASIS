@@ -153,9 +153,10 @@ def categorize_expirations_for_unit(employee_manager: EmployeeManager, docs_mana
                 trainings_actives.dropna(subset=['vencimento_dt'], inplace=True)
                 
                 if not trainings_actives.empty:
+                    # ✅ MUDANÇA: Agrupa por norma E módulo para tratar cada treinamento de forma única
                     latest_trainings = trainings_actives.sort_values(
                         'data', ascending=False
-                    ).groupby(['funcionario_id', 'norma']).head(1).copy()
+                    ).groupby(['funcionario_id', 'norma', 'modulo']).head(1).copy()
         
         # --- Processamento de ASOs ---
         latest_asos = pd.DataFrame()
