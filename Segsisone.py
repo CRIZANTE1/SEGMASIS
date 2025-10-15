@@ -40,7 +40,7 @@ def configurar_pagina():
     )
 
 def initialize_managers():
-    # ✅ CORREÇÃO: Converte unit_id para string logo no início para garantir consistência.
+    # ✅ Converte unit_id para string logo no início para garantir consistência.
     unit_id_obj = st.session_state.get('unit_id')
     unit_id = str(unit_id_obj) if unit_id_obj else None
 
@@ -76,7 +76,7 @@ def initialize_managers():
     # ✅ Reseta flag de visão global
     st.session_state.is_global_view = False
     
-    # ✅ VALIDAÇÃO: Não inicializa se unit_id for None (usuários não-admin)
+    # ✅ VALIDAÇÃO: Não inicializa se unit_id for None
     if not unit_id or unit_id == 'None' or str(unit_id).strip() == '':
         logger.info("Nenhuma unidade selecionada. Managers de unidade não serão inicializados.")
         if st.session_state.get('managers_initialized', False):
@@ -98,12 +98,6 @@ def initialize_managers():
             logger.info("MatrixManager global inicializado.")
         
         return
-    
-    # ✅ CORREÇÃO: A validação de tipo agora não é mais necessária, pois já convertemos para string.
-    # if not isinstance(unit_id, str):
-    #     logger.error(f"unit_id tem tipo inválido: {type(unit_id)}")
-    #     st.error("❌ Erro: ID da unidade inválido")
-    #     return
     
     # Verifica se precisa reinicializar os managers
     if st.session_state.get('managers_unit_id') != unit_id:
