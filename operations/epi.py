@@ -7,7 +7,7 @@ import re
 import logging
 from operations.supabase_operations import SupabaseOperations
 from AI.api_Operation import PDFQA
-from operations.cached_loaders import load_epis_df
+
 from operations.file_hash import calcular_hash_arquivo, verificar_hash_seguro
 from managers.supabase_storage import SupabaseStorageManager
 
@@ -38,7 +38,7 @@ class EPIManager:
     def load_epi_data(self):
         """Carrega os dados de EPIs"""
         try:
-            self.epi_df = load_epis_df(self.unit_id)
+            self.epi_df = self.supabase_ops.get_table_data("fichas_epi")
             
             if self.epi_df is None:
                 logger.warning("load_epis_df retornou None")
