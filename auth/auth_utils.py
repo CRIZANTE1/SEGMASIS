@@ -153,3 +153,29 @@ def get_user_unit_id() -> str | None:
 def get_user_unit_name() -> str:
     """Retorna o nome da unidade do usuário logado."""
     return st.session_state.get('unit_name', 'Nenhuma')
+
+def check_feature_permission(feature_level: str) -> bool:
+    """
+    Verifica se o usuário atual tem permissão para acessar uma funcionalidade.
+    feature_level: 'pro' ou 'premium_ia'
+    """
+    user_info = st.session_state.get('user_info', {})
+    user_role = user_info.get('role')
+    user_plan = user_info.get('plano')
+    user_status = user_info.get('status_assinatura')
+
+    # 1. Super Admin sempre tem acesso a tudo.
+    if user_role == 'admin':
+        return True
+    
+    # 2. Usuário precisa ter uma assinatura ativa ou em trial.
+    if user_status not in ['ativo', 'trial']:
+        return False
+        
+    # 3. Verifica o nível do plano.
+    plan_hierarchy = {'pro': 1, 'premium_ia': 2}
+    
+    user_plan_level = plan_hierarchy.get(user_plan, 0)
+    required_level = plan_hierarchy.get(feature_level, 99) # Nível alto se a feature não existir
+
+    return user_plan_level >= required_level

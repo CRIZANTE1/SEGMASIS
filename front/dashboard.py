@@ -4,7 +4,7 @@ import pandas as pd
 import logging
 from fuzzywuzzy import process
 
-from auth.auth_utils import check_permission
+from auth.auth_utils import check_permission, check_feature_permission
 from ui.ui_helpers import (
     mostrar_info_normas,
     highlight_expired,
@@ -203,7 +203,11 @@ def show_dashboard_page():
             current_employees = employee_manager.get_employees_by_company(selected_company)
             if not current_employees.empty:
                 st.selectbox("Funcionário", current_employees['id'].tolist(), format_func=employee_manager.get_employee_name, key="training_employee_add")
-                st.file_uploader("Anexar Certificado (PDF)", type=['pdf'], key="training_uploader_tab", on_change=process_training_pdf)
+                if check_feature_permission('premium_ia'):
+                    st.file_uploader("Anexar Certificado (PDF)", type=['pdf'], key="training_uploader_tab", on_change=process_training_pdf)
+                else:
+                    st.warning(" Análise de PDF com IA é um recurso do Plano Premium.")
+                    st.info("Para usar esta funcionalidade, faça o upgrade do seu plano ou entre em contato com o suporte.")
                 
                 if st.session_state.get('Treinamento_info_para_salvar'):
                     training_info = st.session_state['Treinamento_info_para_salvar']
