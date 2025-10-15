@@ -115,39 +115,35 @@ class MatrixManager:
     def add_unit(self, unit_data: dict) -> bool:
         """Adiciona uma nova unidade usando Supabase."""
         try:
-            # ✅ Garante que os campos estejam corretos
             required_fields = ['nome_unidade', 'email_contato']
             if not all(field in unit_data for field in required_fields):
                 logger.error(f"Campos obrigatórios faltando: {required_fields}")
                 return False
             
-            # ✅ Validação do nome da unidade
             if not unit_data['nome_unidade'] or len(unit_data['nome_unidade'].strip()) < 3:
                 logger.error("Nome da unidade inválido (mínimo 3 caracteres)")
                 return False
                 
-            # ✅ Validação do email
             if not unit_data['email_contato'] or '@' not in unit_data['email_contato']:
                 logger.error("Email de contato inválido")
                 return False
                 
-            # ✅ Se não tiver folder_id, inicializa como vazio
             if 'folder_id' not in unit_data:
                 unit_data['folder_id'] = ''
             
-            # Verifica se já existe uma unidade com o mesmo nome
             if not self.units_df.empty and unit_data['nome_unidade'].lower() in self.units_df['nome_unidade'].str.lower().values:
                 logger.error(f"Uma unidade com o nome '{unit_data['nome_unidade']}' já existe")
                 return False
             
-            result = self.supabase_ops.insert_row("unidades", unit_data)
+            new_unit_id = self.supabase_ops.insert_row("unidades", unit_data)
             
-            if result:
+            # ✅ CORREÇÃO: Usa o ID retornado diretamente
+            if new_unit_id:
                 log_action(
                     action="ADD_UNIT",
                     details={
                         "message": f"Nova unidade '{unit_data['nome_unidade']}' adicionada.",
-                        "unit_id": result['id'],
+                        "unit_id": new_unit_id,
                         "unit_name": unit_data['nome_unidade'],
                         "email_contato": unit_data['email_contato']
                     }
@@ -166,13 +162,11 @@ class MatrixManager:
     def add_user(self, user_data: dict) -> bool:
         """Adiciona um novo usuário usando Supabase."""
         try:
-            # ✅ Garante que os campos estejam corretos
             required_fields = ['email', 'nome', 'role', 'unidade_associada']
             if not all(field in user_data for field in required_fields):
                 logger.error(f"Campos obrigatórios faltando: {required_fields}")
                 return False
                 
-            # ✅ Validações adicionais
             user_data['email'] = user_data['email'].lower().strip()
             if not user_data['email'] or '@' not in user_data['email']:
                 logger.error(f"Email inválido: {user_data['email']}")
@@ -186,25 +180,25 @@ class MatrixManager:
                 logger.error(f"Role inválida: {user_data['role']}")
                 return False
             
-            # Verifica se o usuário já existe
             if not self.users_df.empty and user_data['email'] in self.users_df['email'].values:
                 logger.error(f"Um usuário com o email '{user_data['email']}' já existe")
                 return False
                 
-            # Verifica se a unidade associada existe
-            if user_data['unidade_associada'] and not self.units_df.empty:
-                unit_exists = user_data['unidade_associada'] in self.units_df['id'].values
+            if user_data['unidade_associada'] and user_data['unidade_associada'] != '*' and not self.units_df.empty:
+                unit_exists = str(user_data['unidade_associada']) in self.units_df['id'].astype(str).values
                 if not unit_exists:
                     logger.error(f"Unidade associada '{user_data['unidade_associada']}' não existe")
                     return False
             
-            result = self.supabase_ops.insert_row("usuarios", user_data)
+            new_user_id = self.supabase_ops.insert_row("usuarios", user_data)
             
-            if result:
+            # ✅ CORREÇÃO: Usa o ID retornado diretamente
+            if new_user_id:
                 log_action(
                     action="ADD_USER",
                     details={
                         "message": f"Novo usuário '{user_data['nome']}' ({user_data['email']}) adicionado.",
+                        "user_id": new_user_id,
                         "email": user_data['email'],
                         "name": user_data['nome'],
                         "role": user_data['role'],
