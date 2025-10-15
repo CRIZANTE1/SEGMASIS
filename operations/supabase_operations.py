@@ -11,7 +11,6 @@ class SupabaseOperations:
     _instance = None
 
     def __new__(cls, unit_id: str = None):
-        # ✅ Instância única POR unit_id
         cache_key = f"_instance_{unit_id}"
         if not hasattr(cls, cache_key) or getattr(cls, cache_key) is None:
             logger.info(f"Criando instância de SupabaseOperations para unit_id: {unit_id}")
@@ -28,7 +27,6 @@ class SupabaseOperations:
         self.global_tables = ['usuarios', 'unidades', 'log_auditoria']
         
         try:
-            # Engine sem RLS por padrão
             self.engine = get_database_engine()
             logger.info(f"SupabaseOperations inicializado (unit_id: {unit_id})")
         except Exception as e:
@@ -38,7 +36,6 @@ class SupabaseOperations:
         self._initialized = True
 
     def get_engine_with_rls(self):
-        """Cria engine com RLS para o usuário autenticado"""
         user_email = None
         
         if hasattr(st, 'session_state'):
@@ -54,13 +51,11 @@ class SupabaseOperations:
         return get_database_engine(user_email)
 
     def get_table_data(self, table_name: str) -> pd.DataFrame:
-        """Carrega todos os dados de uma tabela"""
         if not self.engine:
             logger.error("Database engine não está disponível")
             return pd.DataFrame()
         
         try:
-            # Decide se usa filtro de unit_id
             if table_name in self.global_tables or self.unit_id is None:
                 query = text(f'SELECT * FROM "{table_name}"')
                 params = {}
@@ -78,12 +73,11 @@ class SupabaseOperations:
             return pd.DataFrame()
 
     def insert_row(self, table_name: str, data: dict) -> str | None:
-        """Insere uma linha e retorna APENAS O ID do registro inserido"""
+        """Insere uma linha e retorna APENAS O ID do registro inserido como string."""
         if not self.engine:
             return None
         
         try:
-            # Adiciona unit_id se não for tabela global
             if table_name not in self.global_tables and self.unit_id is not None:
                 data['unit_id'] = self.unit_id
             
@@ -101,7 +95,7 @@ class SupabaseOperations:
                 
                 row = result.fetchone()
                 if row:
-                    # ✅ MUDANÇA: Retorna apenas o ID como string
+                    # ✅ CORREÇÃO: Garante que o retorno seja sempre uma string do ID.
                     return str(row[0])
             
             return None
@@ -111,7 +105,6 @@ class SupabaseOperations:
             return None
 
     def insert_batch(self, table_name: str, data_list: list[dict]) -> list[dict] | None:
-        """Insere múltiplas linhas"""
         successful_inserts = []
         
         for row_data in data_list:
@@ -122,7 +115,6 @@ class SupabaseOperations:
         return successful_inserts if successful_inserts else None
 
     def update_row(self, table_name: str, row_id: str, data: dict) -> dict | None:
-        """Atualiza uma linha pelo ID"""
         if not self.engine or not data:
             return None
         
@@ -152,7 +144,6 @@ class SupabaseOperations:
             return None
 
     def delete_row(self, table_name: str, row_id: str) -> bool:
-        """Deleta uma linha pelo ID"""
         if not self.engine:
             return False
         
@@ -170,7 +161,6 @@ class SupabaseOperations:
             return False
 
     def get_by_field(self, table_name: str, field: str, value) -> pd.DataFrame:
-        """Busca registros por um campo específico"""
         if not self.engine:
             return pd.DataFrame()
         
@@ -186,8 +176,4 @@ class SupabaseOperations:
             return pd.DataFrame()
 
     def get_by_field_no_rls(self, table_name: str, field: str, value) -> pd.DataFrame:
-        """
-        Busca registros SEM aplicar RLS - usado apenas para autenticação.
-        ⚠️ USE COM EXTREMO CUIDADO!
-        """
         return self.get_by_field(table_name, field, value)
