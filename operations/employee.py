@@ -1,5 +1,3 @@
---- START OF FILE operations/employee.py ---
-
 import pandas as pd
 from operations.file_hash import calcular_hash_arquivo, verificar_hash_seguro
 import streamlit as st
@@ -23,8 +21,6 @@ from operations.utils import format_date_safe
 def similar(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
-
-
 try:
     locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
 except locale.Error:
@@ -35,14 +31,13 @@ logger = logging.getLogger('segsisone_app.employee_manager')
 from operations.supabase_operations import SupabaseOperations
 
 class EmployeeManager:
-    def __init__(self, unit_id: str, folder_id: str = ""):  # Usando string vazia como padrão em vez de None
+    def __init__(self, unit_id: str, folder_id: str = ""):
         logger.info(f"Inicializando EmployeeManager para unit_id: ...{unit_id[-6:]}")
         self.unit_id = unit_id
         self.supabase_ops = SupabaseOperations(unit_id)
-        self.folder_id = folder_id  # Mantido apenas para compatibilidade legada
+        self.folder_id = folder_id
         self._pdf_analyzer = None
         self.data_loaded_successfully = False
-        
         
         self.nr20_config = {
             'Básico': {'reciclagem_anos': 3, 'reciclagem_horas': 4, 'inicial_horas': 8},
@@ -68,15 +63,11 @@ class EmployeeManager:
 
     @property
     def pdf_analyzer(self):
-        if self._pdf_analyzer is None: self._pdf_analyzer = PDFQA()
+        if self._pdf_analyzer is None:
+            self._pdf_analyzer = PDFQA()
         return self._pdf_analyzer
 
-
-
     def upload_documento_e_obter_link(self, arquivo, novo_nome: str):
-        """
-        Faz o upload de um arquivo usando Supabase Storage e retorna o link.
-        """
         if not self.unit_id:
             st.error("O ID da unidade não está definido.")
             logger.error("Tentativa de upload sem unit_id definido")
@@ -84,13 +75,9 @@ class EmployeeManager:
         
         try:
             from managers.supabase_storage import SupabaseStorageManager
-            
             storage_manager = SupabaseStorageManager(self.unit_id)
-            
             logger.info(f"Iniciando upload: '{novo_nome}' para unidade ...{self.unit_id[-6:]}")
-            
             return storage_manager.upload_file_simple(arquivo, novo_nome)
-            
         except ImportError as e:
             logger.error(f"Módulo SupabaseStorageManager não encontrado: {e}")
             st.error("❌ Erro de configuração do sistema")
@@ -100,25 +87,16 @@ class EmployeeManager:
             st.error(f"Erro ao fazer upload: {str(e)}")
             return None
 
-
-
-
     def load_data(self):
-        """Carrega dados E cria índices"""
         try:
-            # USA O NOVO CARREGADOR DO SUPABASE
             data = load_all_unit_data(self.unit_id)
-
-            # ✅ Valida se os dados foram carregados
             if not data or not isinstance(data, dict):
                 logger.error("load_all_unit_data retornou dados inválidos")
                 self.data_loaded_successfully = False
                 return
             
-            # ✅ Valida se todas as chaves necessárias existem
             required_keys = ['companies', 'employees', 'asos', 'trainings']
             missing_keys = [key for key in required_keys if key not in data]
-            
             if missing_keys:
                 logger.error(f"Chaves faltando no retorno: {missing_keys}")
                 self.data_loaded_successfully = False
@@ -129,23 +107,17 @@ class EmployeeManager:
             self.aso_df = data['asos'] if data.get('asos') is not None else pd.DataFrame()
             self.training_df = data['trainings'] if data.get('trainings') is not None else pd.DataFrame()
             
-            # ✅ CRIA ÍNDICES (acontece UMA VEZ no carregamento)
             if not self.companies_df.empty:
-                # Índice por ID (busca O(1) em vez de O(n))
                 self.companies_df.set_index('id', inplace=True, drop=False)
             
             if not self.employees_df.empty:
                 self.employees_df.set_index('id', inplace=True, drop=False)
-                
-                # ✅ Pré-agrupa por empresa (busca instantânea depois)
                 self._employees_by_company = self.employees_df.groupby('empresa_id')
             
             if not self.aso_df.empty:
-                # ✅ Pré-agrupa ASOs por funcionário
                 self._asos_by_employee = self.aso_df.groupby('funcionario_id')
             
             if not self.training_df.empty:
-                # ✅ Pré-agrupa treinamentos por funcionário
                 self._trainings_by_employee = self.training_df.groupby('funcionario_id')
             
             self.data_loaded_successfully = True
@@ -159,14 +131,11 @@ class EmployeeManager:
             if not date_string or not isinstance(date_string, str) or date_string.lower() == 'n/a': 
                 return None
             
-            # Remove espaços extras
             date_string = str(date_string).strip()
-            
             if not date_string:
                 return None
                 
             match = re.search(r'(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})|(\d{1,2} de \w+ de \d{4})|(\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2})', date_string, re.IGNORECASE)
-            
             if not match: 
                 return None
                 
@@ -178,9 +147,7 @@ class EmployeeManager:
                     return datetime.strptime(clean_date_string, fmt).date()
                 except ValueError: 
                     continue
-                    
             return None
-            
         except Exception as e:
             logger.error(f"Erro ao parsear data '{date_string}': {e}")
             return None
@@ -201,7 +168,6 @@ class EmployeeManager:
             ERRADO: "cargo": "Cargo: Operador"
             CORRETO: "cargo": "Operador"
             JSON a ser preenchido:
-
             {
             "data_aso": "A data de emissão ou realização do exame clínico. Formato: DD/MM/AAAA.",
             "vencimento_aso": "A data de vencimento explícita no ASO, se houver. Formato: DD/MM/AAAA.",
@@ -209,7 +175,6 @@ class EmployeeManager:
             "cargo": "O cargo ou função do trabalhador.",
             "tipo_aso": "O tipo de exame. Identifique como um dos seguintes: 'Admissional', 'Periódico', 'Demissional', 'Mudança de Risco', 'Retorno ao Trabalho', 'Monitoramento Pontual'."
             }
-
             """
             answer, _ = self.pdf_analyzer.answer_question([temp_path], structured_prompt)
             os.unlink(temp_path)
@@ -241,7 +206,6 @@ class EmployeeManager:
             
             structured_prompt = """
             Você é um especialista em análise de documentos de Saúde e Segurança do Trabalho.
-
             **REGRAS CRÍTICAS:**
             1.  Responda **APENAS com JSON válido**.
             2.  Datas no formato **DD/MM/AAAA**.
@@ -254,7 +218,6 @@ class EmployeeManager:
                 - Para NR-20, identifique: **"Básico"**, **"Intermediário"**, **"Avançado I"** ou **"Avançado II"**
                 - Para NR-33, identifique: **"Trabalhador Autorizado"** ou **"Supervisor"**
                 - Para outros, extraia o módulo ou retorne **"N/A"**
-
             **JSON:**
             ```json
             {
@@ -277,10 +240,8 @@ class EmployeeManager:
                 st.error("❌ A IA retornou um formato inválido")
                 return None
 
-            # ✅ Valida chaves obrigatórias
             required_keys = ['data_realizacao', 'norma', 'tipo_treinamento']
             missing_keys = [key for key in required_keys if key not in data]
-
             if missing_keys:
                 logger.error(f"JSON do treinamento faltando chaves: {missing_keys}")
                 st.error(f"❌ Dados incompletos: {', '.join(missing_keys)}")
@@ -296,17 +257,14 @@ class EmployeeManager:
             tipo_treinamento = str(data.get('tipo_treinamento', 'formação')).lower()
             carga_horaria = int(data.get('carga_horaria', 0)) if data.get('carga_horaria') is not None else 0
             
-            # Garante que SEP seja identificado
             if 'SEP' in norma_padronizada:
                 modulo = 'SEP'
             elif norma_padronizada == 'NR-10' and modulo in ['N/A', '', 'nan']:
                 modulo = 'Básico'
             
-            # Para NR-20, valida se o módulo está correto
             if norma_padronizada == "NR-20":
                 modulos_validos = ['Básico', 'Intermediário', 'Avançado I', 'Avançado II']
                 if modulo not in modulos_validos:
-                    # Tenta inferir pela carga horária
                     key_ch = 'inicial_horas' if tipo_treinamento == 'formação' else 'reciclagem_horas'
                     for mod, config in self.nr20_config.items():
                         if carga_horaria == config.get(key_ch):
@@ -328,7 +286,6 @@ class EmployeeManager:
         if not self.companies_df.empty and cnpj in self.companies_df['cnpj'].values:
             return None, "CNPJ já cadastrado."
         new_data = {'nome': nome, 'cnpj': cnpj, 'status': "Ativo"}
-        # ✅ CORREÇÃO: Usa o nome de tabela correto
         company_id = self.supabase_ops.insert_row("empresas", new_data)
         if company_id:
             self.load_data()
@@ -337,7 +294,6 @@ class EmployeeManager:
 
     def add_employee(self, nome, cargo, data_admissao, empresa_id):
         new_data = {'nome': nome, 'cargo': cargo, 'data_admissao': format_date_safe(data_admissao), 'empresa_id': empresa_id, 'status': 'Ativo'}
-        # ✅ CORREÇÃO: Usa o nome de tabela correto
         employee_id = self.supabase_ops.insert_row("funcionarios", new_data)
         if employee_id:
             self.load_data()
@@ -348,14 +304,11 @@ class EmployeeManager:
         funcionario_id = str(aso_data.get('funcionario_id'))
         arquivo_hash = aso_data.get('arquivo_hash')
         
-        # Verifica duplicata por hash APENAS se a coluna existir e tiver dados
-        
         if arquivo_hash and verificar_hash_seguro(self.aso_df, 'arquivo_hash'):
             duplicata = self.aso_df[
                 (self.aso_df['funcionario_id'] == funcionario_id) &
                 (self.aso_df['arquivo_hash'] == arquivo_hash)
             ]
-            
             if not duplicata.empty:
                 st.warning(f"⚠️ Este arquivo PDF já foi cadastrado anteriormente para este funcionário (ASO do tipo '{duplicata.iloc[0]['tipo_aso']}').")
                 return None
@@ -377,28 +330,22 @@ class EmployeeManager:
         return aso_id
 
     def add_training(self, training_data: dict):
-        """Com tratamento de erro completo"""
         try:
-            # 1. VALIDA (já explicado acima)
             is_valid, validation_msg = self.validate_training_data(training_data)
-            
             if not is_valid:
                 st.error(f"❌ Validação falhou: {validation_msg}")
                 logger.warning(f"Treinamento rejeitado: {validation_msg}")
                 return None
             
-            # 2. PREPARA os dados
             funcionario_id = str(training_data.get('funcionario_id'))
             norma = self._padronizar_norma(training_data.get('norma'))
             modulo = str(training_data.get('modulo', 'N/A')).strip()
             
-            # Normalização de módulo
             if norma == 'NR-10 SEP' and modulo in ['N/A', '', 'nan']:
                 modulo = 'SEP'
             elif norma == 'NR-10' and modulo in ['N/A', '', 'nan']:
                 modulo = 'Básico'
 
-            # ✅ Valida vencimento antes de formatar
             vencimento = training_data.get('vencimento')
             if not vencimento:
                 logger.error("Vencimento não calculado para o treinamento")
@@ -418,13 +365,10 @@ class EmployeeManager:
                 'carga_horaria': str(training_data.get('carga_horaria', '0'))
             }
                     
-            # 3. TENTA SALVAR
             logger.info(f"Salvando treinamento: {norma} - {modulo} para funcionário {funcionario_id}")
             training_id = self.supabase_ops.insert_row("trainings", new_data)
             
-            # 4. VERIFICA SE DEU CERTO
             if training_id:
-                # ✅ SUCESSO - registra no log de auditoria
                 log_action("ADD_TRAINING", {
                     "training_id": training_id,
                     "employee_id": funcionario_id,
@@ -433,35 +377,21 @@ class EmployeeManager:
                     "tipo": training_data.get('tipo_treinamento'),
                     "carga_horaria": training_data.get('carga_horaria')
                 })
-                
-                # Limpa cache e recarrega
                 st.cache_data.clear()
                 self.load_data()
-                
                 logger.info(f"✅ Treinamento {training_id} salvo com sucesso")
                 return training_id
             else:
-                # ❌ FALHOU - informa o usuário
                 st.error("❌ Falha ao salvar no Supabase")
                 logger.error(f"Supabase ops retornou None para treinamento {norma}")
                 return None                
         except Exception as e:
-            # ❌ ERRO INESPERADO - captura tudo
             logger.error(f"Erro crítico ao adicionar treinamento: {e}", exc_info=True)
             st.error(f"❌ Erro inesperado: {str(e)}")
             st.info(" Tente novamente ou contate o suporte se o erro persistir")
             return None
 
-    def _set_status(self, sheet_name: str, item_id: str, status: str):
-        table_name_map = {
-            "empresas": "empresas",
-            "funcionarios": "funcionarios"
-        }
-        table_name = table_name_map.get(sheet_name)
-        if not table_name:
-            logger.error(f"Nome de tabela inválido fornecido para _set_status: {sheet_name}")
-            return False
-
+    def _set_status(self, table_name: str, item_id: str, status: str):
         if self.supabase_ops.update_row(table_name, item_id, {'status': status}):
             self.load_data()
             return True
@@ -473,76 +403,57 @@ class EmployeeManager:
     def unarchive_employee(self, employee_id: str): return self._set_status("funcionarios", employee_id, "Ativo")
 
     def get_latest_aso_by_employee(self, employee_id):
-        # ✅ Valida entrada
-        if not employee_id:
-            logger.warning("employee_id não fornecido")
-            return pd.DataFrame()
-        
-        if not isinstance(employee_id, (str, int)):
+        if not employee_id or not isinstance(employee_id, (str, int)):
             logger.error(f"employee_id tem tipo inválido: {type(employee_id)}")
             return pd.DataFrame()
         
         try:
-            # ✅ CORREÇÃO: Verifica se o índice existe. Se não, não há ASOs para buscar.
             if not hasattr(self, '_asos_by_employee'):
                 logger.debug("Nenhum ASO registrado para esta unidade. Retornando vazio.")
                 return pd.DataFrame()
             
             aso_docs = self._asos_by_employee.get_group(str(employee_id)).copy()
-
             if aso_docs.empty: return pd.DataFrame()
             
-            aso_docs['data_aso'] = pd.to_datetime(aso_docs['data_aso'], format='%d/%m/%Y', errors='coerce')
-            aso_docs['vencimento'] = pd.to_datetime(aso_docs['vencimento'], format='%d/%m/%Y', errors='coerce')
+            aso_docs['data_aso'] = pd.to_datetime(aso_docs['data_aso'], errors='coerce')
+            aso_docs['vencimento'] = pd.to_datetime(aso_docs['vencimento'], errors='coerce')
             aso_docs.dropna(subset=['data_aso'], inplace=True)
             if aso_docs.empty: return pd.DataFrame()
 
             aso_docs['tipo_aso'] = aso_docs['tipo_aso'].fillna('N/A')
             return aso_docs.sort_values('data_aso', ascending=False).groupby('tipo_aso').head(1)
         except KeyError:
-            # Cenário normal: este funcionário específico não tem ASOs.
             return pd.DataFrame()
         except Exception as e:
             logger.error(f"Erro ao buscar ASOs: {e}")
             return pd.DataFrame()
 
     def get_all_trainings_by_employee(self, employee_id):
-        """
-        Retorna o treinamento mais recente para cada COMBINAÇÃO única de norma + módulo normalizado.
-        Reciclagens ocultam formações vencidas, pois são consideradas atualizações válidas.
-        """
         try:
-            # ✅ CORREÇÃO: Verifica se o índice existe. Se não, não há treinamentos para buscar.
             if not hasattr(self, '_trainings_by_employee'):
                 logger.debug(f"Atributo '_trainings_by_employee' não encontrado. Provavelmente não há treinamentos nesta unidade.")
                 return pd.DataFrame()
 
             training_docs = self._trainings_by_employee.get_group(str(employee_id)).copy()
-            
             if training_docs.empty: 
                 return pd.DataFrame()
             
             training_docs.dropna(subset=['data'], inplace=True)
-            
             if training_docs.empty: 
                 return pd.DataFrame()
 
-            # Garante que as colunas essenciais existam
             for col in ['norma', 'modulo', 'tipo_treinamento']:
                 if col not in training_docs.columns: 
                     training_docs[col] = 'N/A'
                 training_docs[col] = training_docs[col].fillna('N/A')
             
-            # ✅ NORMALIZAÇÃO: Norma e módulo para evitar duplicatas por case
             training_docs['norma_normalizada'] = training_docs['norma'].str.strip().str.upper()
             training_docs['modulo_normalizado'] = training_docs['modulo'].str.strip().str.title()
             
-            # ✅ Tratamento especial para casos específicos
             def normalizar_modulo_especial(row):
                 norma = row['norma_normalizada']
                 modulo = row['modulo_normalizado']
                 
-                # NR-10: SEP é diferente de Básico
                 if 'NR-10' in norma:
                     if 'SEP' in norma or 'SEP' in modulo.upper():
                         return 'SEP'
@@ -550,7 +461,6 @@ class EmployeeManager:
                         return 'Básico'
                     return modulo
                 
-                # NR-33: Normaliza variações
                 if 'NR-33' in norma:
                     if 'SUPERVISOR' in modulo.upper():
                         return 'Supervisor'
@@ -558,7 +468,6 @@ class EmployeeManager:
                         return 'Trabalhador Autorizado'
                     return modulo
                 
-                # NR-20: Normaliza módulos
                 if 'NR-20' in norma:
                     modulos_validos = ['Básico', 'Intermediário', 'Avançado I', 'Avançado II']
                     for valido in modulos_validos:
@@ -566,7 +475,6 @@ class EmployeeManager:
                             return valido
                     return modulo
                 
-                # Permissão de Trabalho: Normaliza Emitente/Requisitante
                 if 'PERMISSÃO' in norma or 'PT' in norma:
                     if 'EMITENTE' in modulo.upper():
                         return 'Emitente'
@@ -577,29 +485,20 @@ class EmployeeManager:
                 return modulo
             
             training_docs['modulo_final'] = training_docs.apply(normalizar_modulo_especial, axis=1)
-            
-            # ✅ CRÍTICO: Converte 'data' para datetime se ainda não for
             training_docs['data_dt'] = pd.to_datetime(training_docs['data'], errors='coerce')
-            
-            # ✅ VALIDAÇÃO: Remove linhas sem data válida
             training_docs = training_docs[training_docs['data_dt'].notna()]
 
             if training_docs.empty:
                 logger.debug(f"Nenhum treinamento com data válida para employee_id {employee_id}")
                 return pd.DataFrame()
 
-            # ✅ LÓGICA PRINCIPAL: Agrupa por (norma, módulo) e pega o MAIS RECENTE
-            # Isso significa que uma RECICLAGEM de 2024 vai ocultar uma FORMAÇÃO de 2020
             latest_trainings = training_docs.sort_values(
-                'data_dt', ascending=False  # ✅ Ordena pela data mais recente primeiro
+                'data_dt', ascending=False
             ).groupby(['norma_normalizada', 'modulo_final'], dropna=False).head(1)
             
-            # Remove colunas auxiliares antes de retornar
             latest_trainings = latest_trainings.drop(columns=['norma_normalizada', 'modulo_normalizado', 'modulo_final', 'data_dt'])
-            
             return latest_trainings
         except KeyError:
-            # Cenário normal: este funcionário específico não tem treinamentos.
             return pd.DataFrame()
 
     def get_company_name(self, company_id):
@@ -613,7 +512,6 @@ class EmployeeManager:
         return employee.iloc[0]['nome'] if not employee.empty else f"ID {employee_id}"
 
     def get_employees_by_company(self, company_id: str, include_archived: bool = False):
-        # ✅ Valida se o índice foi criado
         if not hasattr(self, '_employees_by_company'):
             logger.warning("Índice _employees_by_company não foi criado. Usando busca direta.")
             if self.employees_df.empty:
@@ -636,47 +534,35 @@ class EmployeeManager:
             return pd.DataFrame()
 
     def validate_training_data(self, training_data: dict) -> tuple[bool, str]:
-        """
-        Valida TUDO antes de salvar
-        Retorna: (True, "OK") ou (False, "mensagem de erro")
-        """
         try:
-            # 1. Extrai os dados
             norma = training_data.get('norma')
-            modulo = training_data.get('modulo', 'N/A')
-            tipo = training_data.get('tipo_treinamento', 'formação')
-            carga_horaria = training_data.get('carga_horaria', 0)
             data = training_data.get('data')
             vencimento = training_data.get('vencimento')
             
-            # 2. VALIDAÇÃO 1: Campos obrigatórios e tipo correto
-            if not all([norma, 
-                       isinstance(data, (date, datetime)), 
-                       isinstance(vencimento, (date, datetime))]):
+            if not all([norma, isinstance(data, (date, datetime)), isinstance(vencimento, (date, datetime))]):
                 return False, "❌ Faltam campos obrigatórios ou datas inválidas"
             
-            # 3. VALIDAÇÃO 2: Data não pode ser futura
             hoje = date.today()
-            if isinstance(data, datetime):
-                data = data.date()
-                if data is not None and data > hoje:
-                    return False, f"❌ Data de realização ({format_date_safe(data, '%d/%m/%Y')}) não pode ser futura"
+            if isinstance(data, datetime) and data.date() > hoje:
+                return False, f"❌ Data de realização ({format_date_safe(data, '%d/%m/%Y')}) não pode ser futura"
+            elif isinstance(data, date) and data > hoje:
+                return False, f"❌ Data de realização ({format_date_safe(data, '%d/%m/%Y')}) não pode ser futura"
 
-            # 4. VALIDAÇÃO 3: Vencimento após realização
-            if isinstance(vencimento, datetime):
-                vencimento = vencimento.date()
-            if vencimento is not None and data is not None and vencimento <= data:
+            venc_date = vencimento.date() if isinstance(vencimento, datetime) else vencimento
+            data_date = data.date() if isinstance(data, datetime) else data
+            if venc_date <= data_date:
                 return False, f"❌ Vencimento deve ser após a data de realização"
             
-            # 5. VALIDAÇÃO 4: Carga horária (usa função existente)
-            is_valid, msg = self.validar_treinamento(norma, modulo, tipo, carga_horaria)
+            is_valid, msg = self.validar_treinamento(
+                norma, training_data.get('modulo', 'N/A'),
+                training_data.get('tipo_treinamento', 'formação'),
+                training_data.get('carga_horaria', 0)
+            )
             if not is_valid:
                 return False, msg
             
-            # 6. VALIDAÇÃO 5: Duplicata por hash
             arquivo_hash = training_data.get('arquivo_hash')
             funcionario_id = str(training_data.get('funcionario_id'))
-            
             if arquivo_hash and verificar_hash_seguro(self.training_df, 'arquivo_hash'):
                 duplicata = self.training_df[
                     (self.training_df['funcionario_id'] == funcionario_id) &
@@ -685,7 +571,6 @@ class EmployeeManager:
                 if not duplicata.empty:
                     return False, "❌ Este PDF já foi cadastrado anteriormente"
             
-            # 7. TUDO OK!
             return True, "✅ Validação aprovada"
         except Exception as e:
             logger.error(f"Erro crítico na validação: {e}", exc_info=True)
@@ -705,6 +590,7 @@ class EmployeeManager:
         if not isinstance(data, (date, datetime)): return None
         norma_padronizada = self._padronizar_norma(norma)
         anos_validade = None
+        
         if norma_padronizada == "NR-20" and modulo:
             config = self.nr20_config.get(modulo.strip().title())
             if config: anos_validade = config.get('reciclagem_anos')
@@ -718,7 +604,6 @@ class EmployeeManager:
         return None
 
     def delete_aso(self, aso_id: str, file_url: str):
-        """Deleta permanentemente um registro de ASO e seu arquivo."""
         aso_info = self.aso_df[self.aso_df['id'] == aso_id]
         if not aso_info.empty:
             details = {
@@ -731,7 +616,6 @@ class EmployeeManager:
             }
             log_action("DELETE_ASO", details)
 
-        # ✅ USAR SUPABASE STORAGE
         if file_url and pd.notna(file_url):
             try:
                 from managers.supabase_storage import SupabaseStorageManager
@@ -747,7 +631,6 @@ class EmployeeManager:
         return False
 
     def delete_training(self, training_id: str, file_url: str):
-        """Deleta permanentemente um registro de treinamento e seu arquivo."""
         training_info = self.training_df[self.training_df['id'] == training_id]
         if not training_info.empty:
             details = {
@@ -760,7 +643,6 @@ class EmployeeManager:
             }
             log_action("DELETE_TRAINING", details)
 
-        # ✅ USAR SUPABASE STORAGE
         if file_url and pd.notna(file_url):
             try:
                 from managers.supabase_storage import SupabaseStorageManager
@@ -776,18 +658,11 @@ class EmployeeManager:
         return False
 
     def validar_treinamento(self, norma, modulo, tipo_treinamento, carga_horaria):
-        """
-        Valida a carga horária de um treinamento com base na norma, módulo e tipo.
-        Retorna (True, "Mensagem de sucesso") ou (False, "Mensagem de erro").
-        """
         norma_padronizada = self._padronizar_norma(norma)
-        tipo_treinamento = str(tipo_treinamento).lower() # Garante que seja minúsculo
+        tipo_treinamento = str(tipo_treinamento).lower()
 
-        # --- Lógica para NRs com regras simples (do dicionário nr_config) ---
         if norma_padronizada in self.nr_config:
             config = self.nr_config[norma_padronizada]
-            
-            # ✅ CORREÇÃO: Valida tanto formação quanto reciclagem
             if tipo_treinamento == 'formação':
                 if 'inicial_horas' in config and carga_horaria < config['inicial_horas']:
                     return False, f"Carga horária para formação ({norma_padronizada}) deve ser de {config['inicial_horas']}h, mas foi de {carga_horaria}h."
@@ -795,28 +670,21 @@ class EmployeeManager:
                 if 'reciclagem_horas' in config and carga_horaria < config['reciclagem_horas']:
                     return False, f"Carga horária para reciclagem ({norma_padronizada}) deve ser de {config['reciclagem_horas']}h, mas foi de {carga_horaria}h."
 
-        # --- Lógicas Específicas e Complexas ---
-
-        # Lógica para NR-33 (Espaços Confinados)
         if norma_padronizada == "NR-33":
             modulo_normalizado = ""
-            if modulo:
-                if "supervisor" in modulo.lower():
-                    modulo_normalizado = "supervisor"
-                elif "trabalhador" in modulo.lower() or "autorizado" in modulo.lower():
-                    modulo_normalizado = "trabalhador"
+            if modulo and "supervisor" in modulo.lower():
+                modulo_normalizado = "supervisor"
+            elif modulo and ("trabalhador" in modulo.lower() or "autorizado" in modulo.lower()):
+                modulo_normalizado = "trabalhador"
             
             if tipo_treinamento == 'formação':
                 if modulo_normalizado == "supervisor" and carga_horaria < 40:
                     return False, f"Carga horária para formação de Supervisor (NR-33) deve ser de 40h, mas foi de {carga_horaria}h."
                 if modulo_normalizado == "trabalhador" and carga_horaria < 16:
                     return False, f"Carga horária para formação de Trabalhador Autorizado (NR-33) deve ser de 16h, mas foi de {carga_horaria}h."
-            
-            elif tipo_treinamento == 'reciclagem':
-                if carga_horaria < 8:
-                    return False, f"Carga horária para reciclagem (NR-33) deve ser de 8h, mas foi de {carga_horaria}h."
+            elif tipo_treinamento == 'reciclagem' and carga_horaria < 8:
+                return False, f"Carga horária para reciclagem (NR-33) deve ser de 8h, mas foi de {carga_horaria}h."
         
-        # Lógica para Permissão de Trabalho (PT)
         elif norma_padronizada == "PERMISSÃO DE TRABALHO (PT)":
             modulo_lower = str(modulo).lower()
             if "emitente" in modulo_lower:
@@ -830,7 +698,6 @@ class EmployeeManager:
                 elif tipo_treinamento == 'reciclagem' and carga_horaria < 4:
                     return False, f"Carga horária para reciclagem de Requisitante de PT deve ser de 4h, mas foi de {carga_horaria}h."
           
-        # Lógica para Brigada de Incêndio
         elif norma_padronizada == "BRIGADA DE INCÊNDIO":
             is_avancado = "avançado" in str(modulo).lower()
             if is_avancado:
@@ -839,14 +706,12 @@ class EmployeeManager:
                 elif tipo_treinamento == 'reciclagem' and carga_horaria < 16:
                     return False, f"Carga horária para reciclagem de Brigada Avançada deve ser de 16h, mas foi de {carga_horaria}h."
 
-        # Lógica para NR-11 (Movimentação de Cargas)
         elif norma_padronizada == "NR-11":
             if tipo_treinamento == 'formação' and carga_horaria < 16:
                 return False, f"Carga horária para formação (NR-11) parece baixa ({carga_horaria}h). O mínimo comum é 16h."
             elif tipo_treinamento == 'reciclagem' and carga_horaria < 16:
                  return False, f"Carga horária para reciclagem (NR-11) deve ser de 16h, mas foi de {carga_horaria}h."
         
-        # Lógica para NBR 16710 (Resgate Técnico)
         elif norma_padronizada == "NBR-16710 RESGATE TÉCNICO":
             is_industrial_rescue = "industrial" in str(modulo).lower()
             if is_industrial_rescue:
@@ -855,5 +720,4 @@ class EmployeeManager:
                 elif tipo_treinamento == 'reciclagem' and carga_horaria < 24:
                     return False, f"Carga horária para reciclagem de Resgate Técnico Industrial (NBR 16710) deve ser de no mínimo 24h, mas foi de {carga_horaria}h."
         
-        # Se nenhuma das condições de falha for atendida, o treinamento é considerado conforme.
         return True, "Carga horária conforme."
