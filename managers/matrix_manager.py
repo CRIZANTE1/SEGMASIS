@@ -12,7 +12,6 @@ def load_matrix_data():
     """Carrega dados globais da matriz (usuários e unidades)."""
     logger.info("Carregando dados da matriz global...")
     try:
-        # Usa None como unit_id para acessar tabelas globais
         supabase_ops = SupabaseOperations(unit_id=None)
         
         users_data = supabase_ops.get_table_data("usuarios")
@@ -37,44 +36,34 @@ class MatrixManager:
         self._load_data_from_cache()
 
     def _load_data_from_cache(self):
-        """Carrega os dados da função em cache."""
+        """Carrega os dados da função em cache e padroniza os IDs."""
         users_data, units_data, log_data = load_matrix_data()
 
-        # Define colunas esperadas
-        user_cols = ['id', 'email', 'nome', 'role', 'unidade_associada']
-        unit_cols = ['id', 'nome_unidade', 'folder_id', 'email_contato']
-        log_cols = ['id', 'timestamp', 'user_email', 'user_role', 'action', 'details', 'target_uo']
+        # Carrega Unidades e padroniza ID
+        if not units_data.empty:
+            self.units_df = units_data
+            if 'id' in self.units_df.columns:
+                self.units_df['id'] = self.units_df['id'].astype(str)
+        else:
+            self.units_df = pd.DataFrame(columns=['id', 'nome_unidade', 'folder_id', 'email_contato'])
+            logger.warning("Tabela 'unidades' está vazia.")
 
-        # Carrega Usuários
+        # Carrega Usuários e padroniza ID
         if not users_data.empty:
             self.users_df = users_data
-            for col in user_cols:
-                if col not in self.users_df.columns:
-                    self.users_df[col] = None
+            if 'id' in self.users_df.columns:
+                self.users_df['id'] = self.users_df['id'].astype(str)
             if 'email' in self.users_df.columns:
                 self.users_df['email'] = self.users_df['email'].str.lower().str.strip()
         else:
-            self.users_df = pd.DataFrame(columns=user_cols)
+            self.users_df = pd.DataFrame(columns=['id', 'email', 'nome', 'role', 'unidade_associada'])
             logger.warning("Tabela 'usuarios' está vazia.")
-
-        # Carrega Unidades
-        if not units_data.empty:
-            self.units_df = units_data
-            for col in unit_cols:
-                if col not in self.units_df.columns:
-                    self.units_df[col] = None
-        else:
-            self.units_df = pd.DataFrame(columns=unit_cols)
-            logger.warning("Tabela 'unidades' está vazia.")
 
         # Carrega Logs
         if not log_data.empty:
             self.log_df = log_data
-            for col in log_cols:
-                if col not in self.log_df.columns:
-                    self.log_df[col] = None
         else:
-            self.log_df = pd.DataFrame(columns=log_cols)
+            self.log_df = pd.DataFrame(columns=['id', 'timestamp', 'user_email', 'user_role', 'action', 'details', 'target_uo'])
             logger.info("Tabela 'log_auditoria' está vazia.")
         
         self.data_loaded_successfully = True
@@ -90,7 +79,7 @@ class MatrixManager:
         """Retorna informações de uma unidade pelo ID."""
         if self.units_df.empty: 
             return None
-        unit_info = self.units_df[self.units_df['id'] == unit_id]
+        unit_info = self.units_df[self.units_df['id'] == str(unit_id)]
         return unit_info.iloc[0].to_dict() if not unit_info.empty else None
     
     def get_unit_info_by_name(self, unit_name: str) -> dict | None:
@@ -137,7 +126,6 @@ class MatrixManager:
             
             new_unit_id = self.supabase_ops.insert_row("unidades", unit_data)
             
-            # ✅ CORREÇÃO: Usa o ID retornado diretamente
             if new_unit_id:
                 log_action(
                     action="ADD_UNIT",
@@ -150,7 +138,7 @@ class MatrixManager:
                 )
                 
                 load_matrix_data.clear()
-                logger.info(f"Nova unidade '{unit_data['nome_unidade']}' adicionada. Cache invalidado.")
+                self._load_data_from_cache() # Força a recarga dos dados no manager
                 return True
                 
             return False
@@ -176,23 +164,24 @@ class MatrixManager:
                 logger.error("Nome inválido (mínimo 3 caracteres)")
                 return False
                 
-            if user_data['role'] not in ['admin', 'user', 'viewer']:
+            if user_data['role'] not in ['admin', 'editor', 'viewer']:
                 logger.error(f"Role inválida: {user_data['role']}")
                 return False
             
             if not self.users_df.empty and user_data['email'] in self.users_df['email'].values:
                 logger.error(f"Um usuário com o email '{user_data['email']}' já existe")
                 return False
-                
+
+            # ✅ CORREÇÃO: Compara string com string
             if user_data['unidade_associada'] and user_data['unidade_associada'] != '*' and not self.units_df.empty:
-                unit_exists = str(user_data['unidade_associada']) in self.units_df['id'].astype(str).values
+                # self.units_df['id'] já é string por causa do _load_data_from_cache
+                unit_exists = str(user_data['unidade_associada']) in self.units_df['id'].values
                 if not unit_exists:
                     logger.error(f"Unidade associada '{user_data['unidade_associada']}' não existe")
                     return False
             
             new_user_id = self.supabase_ops.insert_row("usuarios", user_data)
             
-            # ✅ CORREÇÃO: Usa o ID retornado diretamente
             if new_user_id:
                 log_action(
                     action="ADD_USER",
@@ -207,7 +196,7 @@ class MatrixManager:
                 )
                 
                 load_matrix_data.clear()
-                logger.info(f"Novo usuário '{user_data['email']}' adicionado. Cache invalidado.")
+                self._load_data_from_cache() # Força a recarga dos dados no manager
                 return True
                 
             return False
@@ -222,11 +211,12 @@ class MatrixManager:
             return False
         
         try:
-            success = self.supabase_ops.update_row("usuarios", user_id, updates)
+            success = self.supabase_ops.update_row("usuarios", str(user_id), updates)
             
             if success:
                 log_action("UPDATE_USER", {"user_id": user_id, "updates": updates})
                 load_matrix_data.clear()
+                self._load_data_from_cache()
                 return True
             return False
         except Exception as e:
@@ -239,10 +229,11 @@ class MatrixManager:
             return False
         
         try:
-            success = self.supabase_ops.delete_row("usuarios", user_id)
+            success = self.supabase_ops.delete_row("usuarios", str(user_id))
             if success:
                 log_action("REMOVE_USER", {"removed_user_id": user_id})
                 load_matrix_data.clear()
+                self._load_data_from_cache()
                 return True
             return False
         except Exception as e:
