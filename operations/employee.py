@@ -326,7 +326,7 @@ class EmployeeManager:
         if not self.companies_df.empty and cnpj in self.companies_df['cnpj'].values:
             return None, "CNPJ já cadastrado."
         new_data = {'nome': nome, 'cnpj': cnpj, 'status': "Ativo"}
-        company_id = self.supabase_ops.insert_row("companies", new_data)
+        company_id = self.supabase_ops.insert_row("empresas", new_data)
         if company_id:
             self.load_data()
             return company_id, "Empresa cadastrada com sucesso"
@@ -334,7 +334,7 @@ class EmployeeManager:
 
     def add_employee(self, nome, cargo, data_admissao, empresa_id):
         new_data = {'nome': nome, 'cargo': cargo, 'data_admissao': format_date_safe(data_admissao), 'empresa_id': empresa_id, 'status': 'Ativo'}
-        employee_id = self.supabase_ops.insert_row("employees", new_data)
+        employee_id = self.supabase_ops.insert_row("funcionarios", new_data)
         if employee_id:
             self.load_data()
             return employee_id, "Funcionário adicionado com sucesso"
@@ -450,8 +450,8 @@ class EmployeeManager:
 
     def _set_status(self, sheet_name: str, item_id: str, status: str):
         table_name_map = {
-            "empresas": "companies",
-            "funcionarios": "employees"
+            "empresas": "empresas",
+            "funcionarios": "funcionarios"
         }
         table_name = table_name_map.get(sheet_name)
         if not table_name:
