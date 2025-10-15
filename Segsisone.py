@@ -1,3 +1,5 @@
+--- START OF FILE Segsisone.py ---
+
 import streamlit as st
 import sys
 import os
@@ -40,7 +42,10 @@ def configurar_pagina():
     )
 
 def initialize_managers():
-    unit_id = st.session_state.get('unit_id')
+    # ✅ CORREÇÃO: Converte unit_id para string logo no início para garantir consistência.
+    unit_id_obj = st.session_state.get('unit_id')
+    unit_id = str(unit_id_obj) if unit_id_obj else None
+
     folder_id = st.session_state.get('folder_id')
     unit_name = st.session_state.get('unit_name')
     user_role = st.session_state.get('role')
@@ -96,11 +101,11 @@ def initialize_managers():
         
         return
     
-        # ✅ Valida tipo do unit_id
-    if not isinstance(unit_id, str):
-        logger.error(f"unit_id tem tipo inválido: {type(unit_id)}")
-        st.error("❌ Erro: ID da unidade inválido")
-        return
+    # ✅ CORREÇÃO: A validação de tipo agora não é mais necessária, pois já convertemos para string.
+    # if not isinstance(unit_id, str):
+    #     logger.error(f"unit_id tem tipo inválido: {type(unit_id)}")
+    #     st.error("❌ Erro: ID da unidade inválido")
+    #     return
     
     # Verifica se precisa reinicializar os managers
     if st.session_state.get('managers_unit_id') != unit_id:
