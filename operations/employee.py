@@ -510,6 +510,11 @@ class EmployeeManager:
         Reciclagens ocultam formações vencidas, pois são consideradas atualizações válidas.
         """
         try:
+            # ✅ CORREÇÃO: Verifica se o índice existe antes de usá-lo.
+            if not hasattr(self, '_trainings_by_employee'):
+                logger.debug(f"Índice de treinamentos não existe para esta unidade (sem dados).")
+                return pd.DataFrame()
+
             training_docs = self._trainings_by_employee.get_group(str(employee_id)).copy()
             
             if training_docs.empty: 
