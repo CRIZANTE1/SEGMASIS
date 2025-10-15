@@ -1,3 +1,5 @@
+--- START OF FILE operations/employee.py ---
+
 import pandas as pd
 from operations.file_hash import calcular_hash_arquivo, verificar_hash_seguro
 import streamlit as st
@@ -326,6 +328,7 @@ class EmployeeManager:
         if not self.companies_df.empty and cnpj in self.companies_df['cnpj'].values:
             return None, "CNPJ já cadastrado."
         new_data = {'nome': nome, 'cnpj': cnpj, 'status': "Ativo"}
+        # ✅ CORREÇÃO: Usa o nome de tabela correto
         company_id = self.supabase_ops.insert_row("empresas", new_data)
         if company_id:
             self.load_data()
@@ -334,6 +337,7 @@ class EmployeeManager:
 
     def add_employee(self, nome, cargo, data_admissao, empresa_id):
         new_data = {'nome': nome, 'cargo': cargo, 'data_admissao': format_date_safe(data_admissao), 'empresa_id': empresa_id, 'status': 'Ativo'}
+        # ✅ CORREÇÃO: Usa o nome de tabela correto
         employee_id = self.supabase_ops.insert_row("funcionarios", new_data)
         if employee_id:
             self.load_data()
@@ -479,14 +483,12 @@ class EmployeeManager:
             return pd.DataFrame()
         
         try:
-            # ✅ Valida se o índice existe
+            # ✅ CORREÇÃO: Verifica se o índice existe. Se não, não há ASOs para buscar.
             if not hasattr(self, '_asos_by_employee'):
-                logger.warning("Índice _asos_by_employee não criado, usando busca direta")
-                if self.aso_df.empty:
-                    return pd.DataFrame()
-                aso_docs = self.aso_df[self.aso_df['funcionario_id'] == str(employee_id)].copy()
-            else:
-                aso_docs = self._asos_by_employee.get_group(str(employee_id)).copy()
+                logger.debug("Nenhum ASO registrado para esta unidade. Retornando vazio.")
+                return pd.DataFrame()
+            
+            aso_docs = self._asos_by_employee.get_group(str(employee_id)).copy()
 
             if aso_docs.empty: return pd.DataFrame()
             
@@ -498,6 +500,7 @@ class EmployeeManager:
             aso_docs['tipo_aso'] = aso_docs['tipo_aso'].fillna('N/A')
             return aso_docs.sort_values('data_aso', ascending=False).groupby('tipo_aso').head(1)
         except KeyError:
+            # Cenário normal: este funcionário específico não tem ASOs.
             return pd.DataFrame()
         except Exception as e:
             logger.error(f"Erro ao buscar ASOs: {e}")
@@ -509,9 +512,9 @@ class EmployeeManager:
         Reciclagens ocultam formações vencidas, pois são consideradas atualizações válidas.
         """
         try:
-            # ✅ CORREÇÃO: Verifica se o índice existe antes de usá-lo.
+            # ✅ CORREÇÃO: Verifica se o índice existe. Se não, não há treinamentos para buscar.
             if not hasattr(self, '_trainings_by_employee'):
-                logger.debug(f"Índice de treinamentos não existe para esta unidade (sem dados).")
+                logger.debug(f"Atributo '_trainings_by_employee' não encontrado. Provavelmente não há treinamentos nesta unidade.")
                 return pd.DataFrame()
 
             training_docs = self._trainings_by_employee.get_group(str(employee_id)).copy()
@@ -596,6 +599,7 @@ class EmployeeManager:
             
             return latest_trainings
         except KeyError:
+            # Cenário normal: este funcionário específico não tem treinamentos.
             return pd.DataFrame()
 
     def get_company_name(self, company_id):
