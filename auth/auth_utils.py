@@ -64,6 +64,7 @@ def authenticate_user() -> bool:
         st.session_state.folder_id = unit_info.get('folder_id')
 
         try:
+            # Lazy import para evitar circular dependency
             from operations.cached_loaders import load_all_unit_data
             unit_data = load_all_unit_data(unit_id)
             companies_df = unit_data.get('companies')

@@ -15,7 +15,12 @@ logger = logging.getLogger('segsisone_app.administracao')
 def load_global_data():
     try:
         from operations.cached_loaders import load_all_units_consolidated_data
-        return load_all_units_consolidated_data()
+        # ✅ MUDANÇA: Passa o e-mail do usuário para a função
+        admin_email = get_user_email()
+        if not admin_email:
+            st.error("Não foi possível identificar o administrador.")
+            return {}
+        return load_all_units_consolidated_data(admin_email)
     except Exception as e:
         st.error(f"Falha ao carregar dados consolidados: {e}")
         return {}
