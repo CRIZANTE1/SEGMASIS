@@ -161,6 +161,14 @@ def handle_delete_confirmation(docs_manager, employee_manager):
 
 def show_dashboard_page():
     logger.info("Iniciando a renderização da página do dashboard.")
+    
+    # ✅ VISÃO GLOBAL para admins
+    if st.session_state.get('is_global_view', False):
+        st.title("📊 Dashboard Global - Todas as Unidades")
+        show_global_consolidated_dashboard()
+        return
+    
+    # ✅ Visão por unidade (normal)
     if not st.session_state.get('managers_initialized'):
         st.warning("Selecione uma unidade operacional para visualizar o dashboard.")
         return
@@ -858,3 +866,88 @@ def show_dashboard_page():
     
     # ✅ Chama o handler de diálogo no final da renderização
     handle_delete_confirmation(docs_manager, employee_manager)
+
+def show_global_consolidated_dashboard():
+    """Dashboard consolidado com dados de todas as unidades"""
+    from operations.cached_loaders import load_all_units_consolidated_data
+    
+    with st.spinner("Carregando dados consolidados de todas as unidades..."):
+        data = load_all_units_consolidated_data()
+    
+    # ✅ Métricas Gerais
+    col1, col2, col3, col4 = st.columns(4)
+    
+    total_companies = len(data['companies'][data['companies']['status'].str.lower() == 'ativo']) if not data['companies'].empty else 0
+    total_employees = len(data['employees'][data['employees']['status'].str.lower() == 'ativo']) if not data['employees'].empty else 0
+    total_units = data['companies']['unidade'].nunique() if not data['companies'].empty and 'unidade' in data['companies'].columns else 0
+    
+    col1.metric("🏢 Unidades Operacionais", total_units)
+    col2.metric("🏭 Empresas Ativas", total_companies)
+    col3.metric("👥 Funcionários Ativos", total_employees)
+    
+    # ✅ Calcula pendências globais
+    today = date.today()
+    total_pendencies = 0
+    
+    if not data['asos'].empty and 'vencimento' in data['asos'].columns:
+        expired_asos = data['asos'][
+            (data['asos']['vencimento'].dt.date < today) &
+            (~data['asos']['tipo_aso'].str.lower().isin(['demissional']))
+        ]
+        total_pendencies += len(expired_asos)
+    
+    if not data['trainings'].empty and 'vencimento' in data['trainings'].columns:
+        expired_trainings = data['trainings'][data['trainings']['vencimento'].dt.date < today]
+        total_pendencies += len(expired_trainings)
+    
+    col4.metric("⚠️ Pendências Totais", total_pendencies, delta="ASOs + Treinamentos", delta_color="inverse" if total_pendencies > 0 else "off")
+    
+    st.divider()
+    
+    # ✅ Breakdown por Unidade
+    st.subheader("📊 Breakdown por Unidade Operacional")
+    
+    if not data['companies'].empty and 'unidade' in data['companies'].columns:
+        units_summary = []
+        
+        for unit_name in data['companies']['unidade'].unique():
+            unit_companies = len(data['companies'][
+                (data['companies']['unidade'] == unit_name) &
+                (data['companies']['status'].str.lower() == 'ativo')
+            ])
+            
+            unit_employees = len(data['employees'][
+                (data['employees']['unidade'] == unit_name) &
+                (data['employees']['status'].str.lower() == 'ativo')
+            ]) if not data['employees'].empty and 'unidade' in data['employees'].columns else 0
+            
+            unit_pendencies = 0
+            if not data['asos'].empty and 'unidade' in data['asos'].columns:
+                unit_pendencies += len(data['asos'][
+                    (data['asos']['unidade'] == unit_name) &
+                    (data['asos']['vencimento'].dt.date < today)
+                ])
+            
+            if not data['trainings'].empty and 'unidade' in data['trainings'].columns:
+                unit_pendencies += len(data['trainings'][
+                    (data['trainings']['unidade'] == unit_name) &
+                    (data['trainings']['vencimento'].dt.date < today)
+                ])
+            
+            units_summary.append({
+                'Unidade': unit_name,
+                'Empresas': unit_companies,
+                'Funcionários': unit_employees,
+                'Pendências': unit_pendencies
+            })
+        
+        summary_df = pd.DataFrame(units_summary)
+        st.dataframe(
+            summary_df.sort_values('Pendências', ascending=False),
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("Nenhum dado consolidado disponível.")
+    
+    st.info("💡 **Dica:** Selecione uma unidade específica no menu lateral para ver detalhes e gerenciar os dados.")

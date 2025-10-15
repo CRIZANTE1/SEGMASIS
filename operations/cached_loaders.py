@@ -121,3 +121,85 @@ def load_action_plan_df(unit_id: str) -> pd.DataFrame:
     
     data = load_all_unit_data(unit_id)
     return data['action_plan']
+
+@st.cache_data(ttl=600, show_spinner="Carregando dados consolidados...")
+def load_all_units_consolidated_data() -> dict:
+    """
+    Carrega dados de TODAS as unidades para visão global do admin.
+    Retorna um dict com DataFrames consolidados.
+    """
+    logger.info("Carregando dados consolidados de todas as unidades...")
+    
+    try:
+        # ✅ Usa SupabaseOperations SEM unit_id para buscar tudo
+        supabase_ops = SupabaseOperations(unit_id=None)
+        
+        if not supabase_ops.engine:
+            logger.error("Engine do banco de dados não disponível")
+            return _get_empty_consolidated_data()
+        
+        # ✅ Busca TODAS as unidades primeiro
+        from managers.matrix_manager import MatrixManager
+        matrix_manager = MatrixManager()
+        all_units = matrix_manager.get_all_units()
+        
+        if not all_units:
+            logger.warning("Nenhuma unidade encontrada")
+            return _get_empty_consolidated_data()
+        
+        # ✅ Agrega dados de todas as unidades
+        aggregated_data = {
+            'companies': [],
+            'employees': [],
+            'asos': [],
+            'trainings': [],
+            'epis': [],
+            'company_docs': [],
+            'action_plan': []
+        }
+        
+        for unit in all_units:
+            unit_id = unit.get('id')
+            unit_name = unit.get('nome_unidade')
+            
+            if not unit_id:
+                continue
+            
+            logger.info(f"Carregando dados da unidade: {unit_name}")
+            
+            # Carrega dados desta unidade
+            unit_data = load_all_unit_data(unit_id)
+            
+            # Adiciona coluna 'unidade' em cada DataFrame
+            for key in aggregated_data.keys():
+                if unit_data[key] is not None and not unit_data[key].empty:
+                    df_copy = unit_data[key].copy()
+                    df_copy['unidade'] = unit_name
+                    aggregated_data[key].append(df_copy)
+        
+        # ✅ Concatena todos os DataFrames
+        consolidated = {}
+        for key, df_list in aggregated_data.items():
+            if df_list:
+                consolidated[key] = pd.concat(df_list, ignore_index=True)
+            else:
+                consolidated[key] = pd.DataFrame()
+        
+        logger.info("✅ Dados consolidados carregados com sucesso")
+        return consolidated
+        
+    except Exception as e:
+        logger.error(f"❌ Erro ao carregar dados consolidados: {e}", exc_info=True)
+        return _get_empty_consolidated_data()
+
+def _get_empty_consolidated_data() -> dict:
+    """Retorna estrutura vazia de dados consolidados"""
+    return {
+        'companies': pd.DataFrame(),
+        'employees': pd.DataFrame(),
+        'asos': pd.DataFrame(),
+        'trainings': pd.DataFrame(),
+        'epis': pd.DataFrame(),
+        'company_docs': pd.DataFrame(),
+        'action_plan': pd.DataFrame()
+    }
