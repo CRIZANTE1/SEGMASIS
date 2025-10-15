@@ -1,5 +1,7 @@
 import streamlit as st
 from managers.matrix_manager import MatrixManager
+from operations.supabase_operations import SupabaseOperations # <-- ADICIONE ESTA IMPORTAÇÃO
+from operations.audit_logger import log_action # <-- MOVA PARA CIMA
 
 def is_oidc_available():
     """Verifica se o login OIDC está configurado e disponível."""
@@ -22,7 +24,7 @@ def get_user_display_name() -> str:
     return get_user_email() or "Usuário Desconhecido"
 
 def authenticate_user() -> bool:
-    """Verifica o usuário na base de dados e carrega o contexto da unidade."""
+    """Verifica o usuário na base de dados. Retorna False se não autorizado."""
     user_email = get_user_email()
     if not user_email:
         return False
@@ -34,23 +36,23 @@ def authenticate_user() -> bool:
     user_info = matrix_manager.get_user_info(user_email)
 
     if not user_info:
-        st.error(f"Acesso negado. Seu e-mail ({user_email}) não está autorizado.")
-        st.session_state.clear()
+        # ✅ MUDANÇA: Não mostra o erro aqui, apenas retorna False
+        # st.error(f"Acesso negado. Seu e-mail ({user_email}) não está autorizado.")
+        # st.session_state.clear()
         return False
 
+    # ... (resto do código de autenticação bem-sucedida, inalterado)
     st.session_state.user_info = user_info
     st.session_state.role = user_info.get('role', 'viewer')
-    
-    # ✅ TRATAMENTO CORRETO do '*'
+    st.session_state.is_single_company_mode = False 
+
     unit_id = user_info.get('unidade_associada')
 
     if not unit_id or str(unit_id).strip() == '*':
-        # Usuário global (admin)
         st.session_state.unit_name = 'Global'
         st.session_state.unit_id = None
         st.session_state.folder_id = None
     else:
-        # Usuário de unidade específica
         unit_info = matrix_manager.get_unit_info(unit_id)
         if not unit_info:
             st.error(f"Erro: A unidade associada não foi encontrada.")
@@ -61,19 +63,64 @@ def authenticate_user() -> bool:
         st.session_state.unit_id = unit_id
         st.session_state.folder_id = unit_info.get('folder_id')
 
+        try:
+            from operations.cached_loaders import load_all_unit_data
+            unit_data = load_all_unit_data(unit_id)
+            companies_df = unit_data.get('companies')
+            if companies_df is not None and len(companies_df) == 1:
+                company_name = companies_df.iloc[0]['nome']
+                if st.session_state.unit_name == company_name:
+                    st.session_state.is_single_company_mode = True
+                    st.session_state.single_company_id = str(companies_df.iloc[0]['id'])
+                    st.session_state.single_company_name = company_name
+        except Exception as e:
+            st.warning(f"Não foi possível verificar o modo de empresa única: {e}")
+
     st.session_state.authenticated_user_email = user_email
     
-    from operations.audit_logger import log_action
     log_action(
         action="USER_LOGIN",
         details={
             "message": f"Usuário '{user_email}' logado com sucesso.",
             "assigned_role": st.session_state.role,
-            "assigned_unit": st.session_state.unit_name
+            "assigned_unit": st.session_state.unit_name,
+            "is_single_company_mode": st.session_state.is_single_company_mode
         }
     )
     
     return True
+
+# ✅ NOVA FUNÇÃO: Salvar solicitação de acesso no Supabase
+def save_access_request(user_name: str, user_email: str, message: str) -> bool:
+    """Salva uma nova solicitação de acesso na tabela 'solicitacoes_acesso'."""
+    try:
+        # Usa SupabaseOperations sem unit_id para acesso global
+        global_ops = SupabaseOperations(unit_id=None)
+        
+        request_data = {
+            "nome_usuario": user_name,
+            "email_usuario": user_email,
+            "mensagem": message,
+            "status": "Pendente"
+        }
+        
+        result = global_ops.insert_row("solicitacoes_acesso", request_data)
+        
+        if result:
+            log_action("ACCESS_REQUEST_SUBMITTED", {"user_email": user_email})
+            return True
+        else:
+            # Verifica se a solicitação já existe (erro de UNIQUE constraint)
+            existing = global_ops.get_by_field("solicitacoes_acesso", "email_usuario", user_email)
+            if not existing.empty:
+                st.warning("Você já possui uma solicitação pendente. Nossa equipe entrará em contato em breve.")
+                return True # Retorna True para a UI mostrar a mensagem de sucesso
+            st.error("Falha ao enviar a solicitação. Tente novamente.")
+            return False
+            
+    except Exception as e:
+        st.error(f"Ocorreu um erro: {e}")
+        return False
 
 def get_user_role() -> str:
     """Retorna o papel (role) do usuário."""

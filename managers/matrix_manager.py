@@ -9,7 +9,7 @@ logger = logging.getLogger('segsisone_app.matrix_manager')
 
 @st.cache_data(ttl=300)
 def load_matrix_data():
-    """Carrega dados globais da matriz (usuários e unidades)."""
+    """Carrega dados globais da matriz (usuários, unidades, logs e solicitações)."""
     logger.info("Carregando dados da matriz global...")
     try:
         supabase_ops = SupabaseOperations(unit_id=None)
@@ -17,225 +17,128 @@ def load_matrix_data():
         users_data = supabase_ops.get_table_data("usuarios")
         units_data = supabase_ops.get_table_data("unidades")
         log_data = supabase_ops.get_table_data("log_auditoria")
+        # ✅ NOVO: Carrega as solicitações de acesso
+        requests_data = supabase_ops.get_table_data("solicitacoes_acesso")
         
         logger.info("Dados da matriz carregados com sucesso.")
-        return users_data, units_data, log_data
+        return users_data, units_data, log_data, requests_data
         
     except Exception as e:
         logger.critical(f"Falha ao carregar dados da matriz: {e}", exc_info=True)
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 class MatrixManager:
     def __init__(self):
-        """Gerencia dados globais: Usuários e Unidades."""
         self.supabase_ops = SupabaseOperations(unit_id=None)
         self.users_df = pd.DataFrame()
         self.units_df = pd.DataFrame()
         self.log_df = pd.DataFrame()
+        self.requests_df = pd.DataFrame() # ✅ NOVO
         self.data_loaded_successfully = False
         self._load_data_from_cache()
 
     def _load_data_from_cache(self):
         """Carrega os dados da função em cache e padroniza os IDs."""
-        users_data, units_data, log_data = load_matrix_data()
+        users_data, units_data, log_data, requests_data = load_matrix_data()
 
-        # Carrega Unidades e padroniza ID
-        if not units_data.empty:
-            self.units_df = units_data
-            if 'id' in self.units_df.columns:
-                self.units_df['id'] = self.units_df['id'].astype(str)
-        else:
-            self.units_df = pd.DataFrame(columns=['id', 'nome_unidade', 'folder_id', 'email_contato'])
-            logger.warning("Tabela 'unidades' está vazia.")
-
-        # Carrega Usuários e padroniza ID
         if not users_data.empty:
-            self.users_df = users_data
-            if 'id' in self.users_df.columns:
-                self.users_df['id'] = self.users_df['id'].astype(str)
-            if 'email' in self.users_df.columns:
-                self.users_df['email'] = self.users_df['email'].str.lower().str.strip()
+            self.users_df = users_data.astype({'id': 'str', 'unidade_associada': 'str'})
         else:
             self.users_df = pd.DataFrame(columns=['id', 'email', 'nome', 'role', 'unidade_associada'])
-            logger.warning("Tabela 'usuarios' está vazia.")
 
-        # Carrega Logs
+        if not units_data.empty:
+            self.units_df = units_data.astype({'id': 'str'})
+        else:
+            self.units_df = pd.DataFrame(columns=['id', 'nome_unidade', 'folder_id'])
+
         if not log_data.empty:
             self.log_df = log_data
         else:
-            self.log_df = pd.DataFrame(columns=['id', 'timestamp', 'user_email', 'user_role', 'action', 'details', 'target_uo'])
-            logger.info("Tabela 'log_auditoria' está vazia.")
+            self.log_df = pd.DataFrame()
         
+        # ✅ NOVO: Carrega e padroniza solicitações
+        if not requests_data.empty:
+            self.requests_df = requests_data
+        else:
+            self.requests_df = pd.DataFrame(columns=['id', 'email_usuario', 'nome_usuario', 'status'])
+
         self.data_loaded_successfully = True
-        
+
     def get_user_info(self, email: str) -> dict | None:
-        """Retorna informações de um usuário pelo email."""
-        if self.users_df.empty: 
+        if self.users_df.empty:
             return None
-        user_info = self.users_df[self.users_df['email'] == email.lower().strip()]
-        return user_info.iloc[0].to_dict() if not user_info.empty else None
+        user_data = self.users_df[self.users_df['email'].str.lower() == email.lower()]
+        return user_data.to_dict('records')[0] if not user_data.empty else None
 
     def get_unit_info(self, unit_id: str) -> dict | None:
-        """Retorna informações de uma unidade pelo ID."""
-        if self.units_df.empty: 
+        if self.units_df.empty:
             return None
-        unit_info = self.units_df[self.units_df['id'] == str(unit_id)]
-        return unit_info.iloc[0].to_dict() if not unit_info.empty else None
-    
+        unit_data = self.units_df[self.units_df['id'] == unit_id]
+        return unit_data.to_dict('records')[0] if not unit_data.empty else None
+
     def get_unit_info_by_name(self, unit_name: str) -> dict | None:
-        """Retorna informações de uma unidade pelo nome."""
-        if self.units_df.empty: 
+        if self.units_df.empty:
             return None
-        unit_info = self.units_df[self.units_df['nome_unidade'] == unit_name]
-        return unit_info.iloc[0].to_dict() if not unit_info.empty else None
+        unit_data = self.units_df[self.units_df['nome_unidade'] == unit_name]
+        return unit_data.to_dict('records')[0] if not unit_data.empty else None
 
     def get_all_units(self) -> list:
-        """Retorna todas as unidades."""
-        return self.units_df.to_dict(orient='records') if not self.units_df.empty else []
+        if self.units_df.empty:
+            return []
+        return self.units_df.to_dict('records')
+        
+    def get_all_users(self) -> list:
+        if self.users_df.empty:
+            return []
+        return self.users_df.to_dict('records')
 
     def get_audit_logs(self) -> pd.DataFrame:
-        """Retorna o DataFrame de logs de auditoria."""
         return self.log_df
 
-    def get_all_users(self) -> list:
-        """Retorna todos os usuários."""
-        return self.users_df.to_dict(orient='records') if not self.users_df.empty else []
+    # ✅ NOVO: Método para buscar solicitações pendentes
+    def get_pending_access_requests(self) -> pd.DataFrame:
+        """Retorna um DataFrame com as solicitações de acesso pendentes.""" 
+        if self.requests_df.empty:
+            return pd.DataFrame()
+        return self.requests_df[self.requests_df['status'].str.lower() == 'pendente'].copy()
 
+    # ✅ NOVO: Método para atualizar o status de uma solicitação
+    def update_access_request_status(self, request_id: int, new_status: str) -> bool:
+        """Atualiza o status de uma solicitação de acesso pelo seu ID."""
+        success = self.supabase_ops.update_row(
+            "solicitacoes_acesso", 
+            str(request_id), 
+            {'status': new_status}
+        )
+        if success:
+            load_matrix_data.clear() # Limpa o cache para recarregar
+            self._load_data_from_cache()
+        return success is not None
+        
     def add_unit(self, unit_data: dict) -> bool:
-        """Adiciona uma nova unidade usando Supabase."""
-        try:
-            required_fields = ['nome_unidade', 'email_contato']
-            if not all(field in unit_data for field in required_fields):
-                logger.error(f"Campos obrigatórios faltando: {required_fields}")
-                return False
-            
-            if not unit_data['nome_unidade'] or len(unit_data['nome_unidade'].strip()) < 3:
-                logger.error("Nome da unidade inválido (mínimo 3 caracteres)")
-                return False
-                
-            if not unit_data['email_contato'] or '@' not in unit_data['email_contato']:
-                logger.error("Email de contato inválido")
-                return False
-                
-            if 'folder_id' not in unit_data:
-                unit_data['folder_id'] = ''
-            
-            if not self.units_df.empty and unit_data['nome_unidade'].lower() in self.units_df['nome_unidade'].str.lower().values:
-                logger.error(f"Uma unidade com o nome '{unit_data['nome_unidade']}' já existe")
-                return False
-            
-            new_unit_id = self.supabase_ops.insert_row("unidades", unit_data)
-            
-            if new_unit_id:
-                log_action(
-                    action="ADD_UNIT",
-                    details={
-                        "message": f"Nova unidade '{unit_data['nome_unidade']}' adicionada.",
-                        "unit_id": new_unit_id,
-                        "unit_name": unit_data['nome_unidade'],
-                        "email_contato": unit_data['email_contato']
-                    }
-                )
-                
-                load_matrix_data.clear()
-                self._load_data_from_cache() # Força a recarga dos dados no manager
-                return True
-                
-            return False
-            
-        except Exception as e:
-            logger.error(f"Falha ao adicionar nova unidade: {e}")
-            return False
+        result = self.supabase_ops.insert_row("unidades", unit_data)
+        if result:
+            load_matrix_data.clear()
+            self._load_data_from_cache()
+        return result is not None
 
     def add_user(self, user_data: dict) -> bool:
-        """Adiciona um novo usuário usando Supabase."""
-        try:
-            required_fields = ['email', 'nome', 'role', 'unidade_associada']
-            if not all(field in user_data for field in required_fields):
-                logger.error(f"Campos obrigatórios faltando: {required_fields}")
-                return False
-                
-            user_data['email'] = user_data['email'].lower().strip()
-            if not user_data['email'] or '@' not in user_data['email']:
-                logger.error(f"Email inválido: {user_data['email']}")
-                return False
-                
-            if not user_data['nome'] or len(user_data['nome'].strip()) < 3:
-                logger.error("Nome inválido (mínimo 3 caracteres)")
-                return False
-                
-            if user_data['role'] not in ['admin', 'editor', 'viewer']:
-                logger.error(f"Role inválida: {user_data['role']}")
-                return False
-            
-            if not self.users_df.empty and user_data['email'] in self.users_df['email'].values:
-                logger.error(f"Um usuário com o email '{user_data['email']}' já existe")
-                return False
-
-            # ✅ CORREÇÃO: Compara string com string
-            if user_data['unidade_associada'] and user_data['unidade_associada'] != '*' and not self.units_df.empty:
-                # self.units_df['id'] já é string por causa do _load_data_from_cache
-                unit_exists = str(user_data['unidade_associada']) in self.units_df['id'].values
-                if not unit_exists:
-                    logger.error(f"Unidade associada '{user_data['unidade_associada']}' não existe")
-                    return False
-            
-            new_user_id = self.supabase_ops.insert_row("usuarios", user_data)
-            
-            if new_user_id:
-                log_action(
-                    action="ADD_USER",
-                    details={
-                        "message": f"Novo usuário '{user_data['nome']}' ({user_data['email']}) adicionado.",
-                        "user_id": new_user_id,
-                        "email": user_data['email'],
-                        "name": user_data['nome'],
-                        "role": user_data['role'],
-                        "assigned_unit": user_data.get('unidade_associada')
-                    }
-                )
-                
-                load_matrix_data.clear()
-                self._load_data_from_cache() # Força a recarga dos dados no manager
-                return True
-                
-            return False
-            
-        except Exception as e:
-            logger.error(f"Falha ao adicionar novo usuário: {e}")
-            return False
+        result = self.supabase_ops.insert_row("usuarios", user_data)
+        if result:
+            load_matrix_data.clear()
+            self._load_data_from_cache()
+        return result is not None
 
     def update_user(self, user_id: str, updates: dict) -> bool:
-        """Atualiza os dados de um usuário pelo ID."""
-        if self.users_df.empty or not user_id:
-            return False
-        
-        try:
-            success = self.supabase_ops.update_row("usuarios", str(user_id), updates)
-            
-            if success:
-                log_action("UPDATE_USER", {"user_id": user_id, "updates": updates})
-                load_matrix_data.clear()
-                self._load_data_from_cache()
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Falha ao atualizar usuário '{user_id}': {e}")
-            return False
+        result = self.supabase_ops.update_row("usuarios", user_id, updates)
+        if result:
+            load_matrix_data.clear()
+            self._load_data_from_cache()
+        return result is not None
             
     def remove_user(self, user_id: str) -> bool:
-        """Remove um usuário pelo ID."""
-        if self.users_df.empty or not user_id: 
-            return False
-        
-        try:
-            success = self.supabase_ops.delete_row("usuarios", str(user_id))
-            if success:
-                log_action("REMOVE_USER", {"removed_user_id": user_id})
-                load_matrix_data.clear()
-                self._load_data_from_cache()
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Falha ao remover usuário '{user_id}': {e}")
-            return False
+        result = self.supabase_ops.delete_row("usuarios", user_id)
+        if result:
+            load_matrix_data.clear()
+            self._load_data_from_cache()
+        return result is not None
