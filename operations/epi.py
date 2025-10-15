@@ -14,10 +14,17 @@ logger = logging.getLogger('segsisone_app.epi_manager')
 
 class EPIManager:
     def __init__(self, unit_id: str):
+        # ✅ VALIDAÇÃO DE ENTRADA
+        if not unit_id or unit_id == 'None' or str(unit_id).strip() == '':
+            logger.error("EPIManager inicializado sem unit_id válido")
+            raise ValueError("unit_id não pode ser vazio")
+        
         self.supabase_ops = SupabaseOperations(unit_id)
         self.unit_id = unit_id
+        self.storage_manager = SupabaseStorageManager(unit_id)
         self._pdf_analyzer = None
         self.data_loaded_successfully = False
+        self.epi_df = pd.DataFrame()
         self.load_epi_data()
 
     @property
@@ -27,17 +34,23 @@ class EPIManager:
         return self._pdf_analyzer
 
     def load_epi_data(self):
-        if not self.unit_id:
-            logger.error("unit_id não definido ao carregar EPIs")
-            self.epi_df = pd.DataFrame()
-            self.data_loaded_successfully = False
-            return
-            
+        """Carrega os dados de EPIs"""
         try:
             self.epi_df = load_epis_df(self.unit_id)
-            self.data_loaded_successfully = not self.epi_df.empty
+            
+            if self.epi_df is None:
+                logger.warning("load_epis_df retornou None")
+                self.epi_df = pd.DataFrame()
+                self.data_loaded_successfully = False
+            elif self.epi_df.empty:
+                logger.info("Tabela 'fichas_epi' está vazia para esta unidade")
+                self.data_loaded_successfully = True
+            else:
+                logger.info(f"✅ {len(self.epi_df)} registro(s) de EPI carregado(s)")
+                self.data_loaded_successfully = True
+                
         except Exception as e:
-            st.error(f"Erro ao carregar dados de EPI: {str(e)}")
+            logger.error(f"Erro ao carregar dados de EPI: {e}", exc_info=True)
             self.epi_df = pd.DataFrame()
             self.data_loaded_successfully = False
 

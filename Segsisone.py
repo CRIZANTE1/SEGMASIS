@@ -43,19 +43,42 @@ def initialize_managers():
     unit_id = st.session_state.get('unit_id')
     folder_id = st.session_state.get('folder_id')
     
+    # ✅ VALIDAÇÃO CRÍTICA: Não inicializa se unit_id for None
+    if not unit_id or unit_id == 'None' or str(unit_id).strip() == '':
+        logger.info("Nenhuma unidade selecionada. Managers de unidade não serão inicializados.")
+        if st.session_state.get('managers_initialized', False):
+            # Limpa managers antigos
+            keys_to_delete = [
+                'employee_manager', 'docs_manager', 'epi_manager', 
+                'action_plan_manager', 'nr_analyzer', 'managers_unit_id', 
+                'matrix_manager_unidade'
+            ]
+            for key in keys_to_delete:
+                if key in st.session_state:
+                    del st.session_state[key]
+        st.session_state.managers_initialized = False
+        
+        # MatrixManager global (sempre disponível)
+        if 'matrix_manager' not in st.session_state:
+            logger.info("Inicializando MatrixManager global...")
+            st.session_state.matrix_manager = MatrixManager()
+            logger.info("MatrixManager global inicializado.")
+        
+        return
+    
     # ✅ Valida tipo do unit_id
-    if unit_id and not isinstance(unit_id, str):
+    if not isinstance(unit_id, str):
         logger.error(f"unit_id tem tipo inválido: {type(unit_id)}")
         st.error("❌ Erro: ID da unidade inválido")
         return
     
     # Verifica se precisa reinicializar os managers
-    if unit_id and st.session_state.get('managers_unit_id') != unit_id:
-        logger.info(f"Trocando de unidade. Inicializando managers para: ...{unit_id[-6:] if unit_id else 'None'}")
+    if st.session_state.get('managers_unit_id') != unit_id:
+        logger.info(f"Trocando de unidade. Inicializando managers para: ...{unit_id[-6:]}")
         
         try:
             with st.spinner("Configurando ambiente da unidade..."):
-                managers_ok = True  # ✅ Flag de controle
+                managers_ok = True
 
                 # ✅ EmployeeManager
                 try:
@@ -63,6 +86,7 @@ def initialize_managers():
                     if not employee_manager.data_loaded_successfully:
                         raise Exception("Falha ao carregar dados de funcionários")
                     st.session_state.employee_manager = employee_manager
+                    logger.info("✅ EmployeeManager inicializado")
                 except Exception as e:
                     logger.error(f"Erro ao inicializar EmployeeManager: {e}")
                     st.error("❌ Erro ao carregar dados de funcionários")
@@ -74,6 +98,7 @@ def initialize_managers():
                     if not docs_manager.data_loaded_successfully:
                         raise Exception("Falha ao carregar documentos")
                     st.session_state.docs_manager = docs_manager
+                    logger.info("✅ CompanyDocsManager inicializado")
                 except Exception as e:
                     logger.error(f"Erro ao inicializar CompanyDocsManager: {e}")
                     st.error("❌ Erro ao carregar documentos da empresa")
@@ -83,8 +108,9 @@ def initialize_managers():
                 try:
                     epi_manager = EPIManager(unit_id)
                     if not epi_manager.data_loaded_successfully:
-                        raise Exception("Falha ao carregar dados de EPIs")
+                        logger.warning("Dados de EPI não carregados (pode ser vazio)")
                     st.session_state.epi_manager = epi_manager
+                    logger.info("✅ EPIManager inicializado")
                 except Exception as e:
                     logger.error(f"Erro ao inicializar EPIManager: {e}")
                     st.error("❌ Erro ao carregar dados de EPIs")
@@ -94,8 +120,9 @@ def initialize_managers():
                 try:
                     action_plan_manager = ActionPlanManager(unit_id)
                     if not action_plan_manager.data_loaded_successfully:
-                        raise Exception("Falha ao carregar plano de ação")
+                        logger.warning("Dados do plano de ação não carregados (pode ser vazio)")
                     st.session_state.action_plan_manager = action_plan_manager
+                    logger.info("✅ ActionPlanManager inicializado")
                 except Exception as e:
                     logger.error(f"Erro ao inicializar ActionPlanManager: {e}")
                     st.error("❌ Erro ao carregar plano de ação")
@@ -105,6 +132,7 @@ def initialize_managers():
                 try:
                     nr_analyzer = NRAnalyzer(unit_id)
                     st.session_state.nr_analyzer = nr_analyzer
+                    logger.info("✅ NRAnalyzer inicializado")
                 except Exception as e:
                     logger.error(f"Erro ao inicializar NRAnalyzer: {e}")
                     st.error("❌ Erro ao carregar analisador NR")
@@ -114,6 +142,7 @@ def initialize_managers():
                 try:
                     matrix_manager = TrainingMatrixManager(unit_id)
                     st.session_state.matrix_manager_unidade = matrix_manager
+                    logger.info("✅ TrainingMatrixManager inicializado")
                 except Exception as e:
                     logger.error(f"Erro ao inicializar TrainingMatrixManager: {e}")
                     st.error("❌ Erro ao carregar matriz de treinamentos")
@@ -122,31 +151,18 @@ def initialize_managers():
                 # ✅ CRÍTICO: Só marca como sucesso se TODOS funcionaram
                 if not managers_ok:
                     st.session_state.managers_initialized = False
+                    st.error("⚠️ Alguns componentes falharam ao inicializar. Funcionalidade limitada.")
                     return
             
             st.session_state.managers_unit_id = unit_id
             st.session_state.managers_initialized = True
             st.toast("✅ Ambiente configurado com sucesso!", icon="✅")
-            logger.info("Managers da unidade inicializados com sucesso.")
+            logger.info("✅ Managers da unidade inicializados com sucesso.")
             
         except Exception as e:
-            logger.error(f"Erro crítico ao inicializar managers: {e}")
+            logger.error(f"Erro crítico ao inicializar managers: {e}", exc_info=True)
             st.error("❌ Falha ao configurar ambiente. Tente novamente.")
             st.session_state.managers_initialized = False
-    
-    elif not unit_id:
-        # Usuário global - reseta managers de unidade
-        if st.session_state.get('managers_initialized', False):
-            logger.info("Nenhuma unidade selecionada. Resetando managers da unidade.")
-            keys_to_delete = [
-                'employee_manager', 'docs_manager', 'epi_manager', 
-                'action_plan_manager', 'nr_analyzer', 'managers_unit_id', 
-                'matrix_manager_unidade'
-            ]
-            for key in keys_to_delete:
-                if key in st.session_state:
-                    del st.session_state[key]
-        st.session_state.managers_initialized = False
     
     # MatrixManager global (sempre disponível)
     if 'matrix_manager' not in st.session_state:

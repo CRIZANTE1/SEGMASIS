@@ -77,8 +77,8 @@ class SupabaseOperations:
             logger.error(f"Erro ao carregar '{table_name}': {e}")
             return pd.DataFrame()
 
-    def insert_row(self, table_name: str, data: dict) -> dict | None:
-        """Insere uma linha e retorna o registro inserido"""
+    def insert_row(self, table_name: str, data: dict) -> str | None:
+        """Insere uma linha e retorna APENAS O ID do registro inserido"""
         if not self.engine:
             return None
         
@@ -92,7 +92,7 @@ class SupabaseOperations:
             query = text(f'''
                 INSERT INTO "{table_name}" ({columns})
                 VALUES ({placeholders})
-                RETURNING *
+                RETURNING id
             ''')
             
             with self.engine.connect() as conn:
@@ -101,7 +101,8 @@ class SupabaseOperations:
                 
                 row = result.fetchone()
                 if row:
-                    return dict(row._mapping)
+                    # ✅ MUDANÇA: Retorna apenas o ID como string
+                    return str(row[0])
             
             return None
             

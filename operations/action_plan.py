@@ -7,6 +7,11 @@ from operations.cached_loaders import load_action_plan_df
 
 class ActionPlanManager:
     def __init__(self, unit_id: str):
+        # ✅ VALIDAÇÃO DE ENTRADA
+        if not unit_id or unit_id == 'None' or str(unit_id).strip() == '':
+            logger.error("ActionPlanManager inicializado sem unit_id válido")
+            raise ValueError("unit_id não pode ser vazio")
+        
         self.supabase_ops = SupabaseOperations(unit_id)
         self.unit_id = unit_id
         
@@ -17,6 +22,7 @@ class ActionPlanManager:
             'data_criacao', 'data_conclusao'
         ]
         
+        self.action_plan_df = pd.DataFrame()
         self.data_loaded_successfully = False
         self.load_data()
 
@@ -25,15 +31,19 @@ class ActionPlanManager:
         try:
             self.action_plan_df = load_action_plan_df(self.unit_id)
             
-            if not self.action_plan_df.empty:
-                self.data_loaded_successfully = True
-                logger.info(f"Plano de ação carregado: {len(self.action_plan_df)} itens.")
-            else:
+            if self.action_plan_df is None:
+                logger.warning("load_action_plan_df retornou None")
+                self.action_plan_df = pd.DataFrame(columns=self.columns)
                 self.data_loaded_successfully = False
-                logger.warning("Aba 'plano_acao' está vazia.")
+            elif self.action_plan_df.empty:
+                logger.info("Tabela 'plano_acao' está vazia para esta unidade")
+                self.data_loaded_successfully = True
+            else:
+                logger.info(f"✅ {len(self.action_plan_df)} item(ns) do plano de ação carregado(s)")
+                self.data_loaded_successfully = True
         
         except Exception as e:
-            logger.error(f"Erro ao carregar plano de ação: {e}")
+            logger.error(f"Erro ao carregar plano de ação: {e}", exc_info=True)
             self.action_plan_df = pd.DataFrame(columns=self.columns)
             self.data_loaded_successfully = False
 
