@@ -48,6 +48,7 @@ def load_all_units_consolidated_data() -> dict:
         # ✅ CORREÇÃO: Usa uma instância de SupabaseOperations, mas vamos usar um engine com RLS.
         supabase_ops = SupabaseOperations(unit_id=None)
         
+        admin_email = get_user_email()
         if not admin_email:
             logger.error("E-mail do admin não fornecido para carregar dados globais.")
             return _get_empty_consolidated_data()
