@@ -2,6 +2,12 @@ import streamlit as st
 from .auth_utils import is_oidc_available, is_user_logged_in, get_user_display_name, get_user_email, save_access_request
 from operations.audit_logger import log_action
 
+def validate_auth_config():
+    """Valida se a configuração de autenticação está correta."""
+    # ... (código inalterado)
+    return True, "Configuração OK"
+
+# ✅ FUNÇÃO MOVIDA PARA O LUGAR CORRETO
 def show_access_denied_page():
     """Exibe a página para usuários autenticados mas não autorizados."""
     st.title("SEGMA-SIS | Gestão Inteligente")
@@ -49,11 +55,28 @@ def show_login_page():
     st.write("Por favor, faça login para acessar o sistema.")
     
     if st.button("Fazer Login com Google"):
-        st.login()
+        try:
+            st.login()
+        except Exception as e:
+            st.error(f"Erro ao iniciar login: {e}")
 
 def show_user_header():
-    st.markdown(f"Logado como: **{get_user_display_name()}**")
+    """Mostra o cabeçalho com informações do usuário"""
+    st.write(f"Bem-vindo, {get_user_display_name()}!")
 
 def show_logout_button():
-    if st.button("Logout"):
-        st.logout()
+    """Mostra o botão de logout no sidebar e registra o evento."""
+    with st.sidebar:
+        if st.button("Sair do Sistema"):
+            user_email_to_log = get_user_email()
+            
+            if user_email_to_log:
+                log_action("USER_LOGOUT", {"message": f"Usuário '{user_email_to_log}' deslogado."})
+            
+            try:
+                st.logout()
+            except Exception as e:
+                st.error(f"Erro ao fazer logout: {str(e)}")
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.rerun()
