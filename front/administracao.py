@@ -83,16 +83,13 @@ def handle_user_dialog(matrix_manager):
                 st.markdown("---")
                 st.subheader("Assinatura e Plano")
 
-                # Oculta opções de plano para o Super Admin para evitar confusão
                 if user_data and user_data.get('unidade_associada') == '*':
                     st.info("O Super Administrador tem acesso total por padrão e não possui um plano de assinatura formal.")
-                    # Mantém os valores como None para não tentar salvá-los
                     plano = None
                     status_assinatura = None
                     data_fim_trial = None
                 else:
-                    # Mostra as opções para usuários normais
-                    plan_options = ["pro", "premium_ia"] # Remove "basico"
+                    plan_options = ["pro", "premium_ia"]
                     current_plan = user_data.get('plano', 'pro')
                     current_plan_index = plan_options.index(current_plan) if is_edit and current_plan in plan_options else 0
                     plano = st.selectbox("Plano de Assinatura:", plan_options, index=current_plan_index)
@@ -106,8 +103,11 @@ def handle_user_dialog(matrix_manager):
                     data_fim_trial = st.date_input("Data de Fim do Trial (se aplicável):", value=data_fim_trial_val)
 
                 if st.form_submit_button("Salvar"):
-                    if not email or not nome:
-                        st.error("E-mail e Nome são obrigatórios.")
+                    if not email and not is_edit:
+                        st.error("E-mail é obrigatório para novos usuários.")
+                        return
+                    if not nome:
+                        st.error("Nome é obrigatório.")
                         return
 
                     updates = {
@@ -128,17 +128,8 @@ def handle_user_dialog(matrix_manager):
                         if matrix_manager.get_user_info(email):
                             st.error(f"O e-mail '{email}' já está cadastrado.")
                         else:
-                            fim_trial = date.today() + timedelta(days=14)
-
-                        new_user_data = {
-                            "email": request['email_usuario'],
-                            "nome": request['nome_usuario'],
-                            "role": role, # O role (editor/viewer) ainda define as permissões
-                            "unidade_associada": unit_id,
-                            "plano": "premium_ia", # Sempre inicia o trial no plano máximo
-                            "status_assinatura": "trial", # Status correto para período de teste
-                            "data_fim_trial": fim_trial.isoformat()
-                        }
+                            updates['email'] = email
+                            if matrix_manager.add_user(updates):
                                 st.success(f"Usuário '{nome}' adicionado com sucesso!")
                                 st.rerun()
                             else:
