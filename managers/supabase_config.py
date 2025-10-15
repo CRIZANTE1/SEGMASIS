@@ -16,16 +16,31 @@ def get_supabase_client() -> Client:
         if hasattr(st, 'secrets') and 'supabase' in st.secrets:
             url = st.secrets.supabase.url
             key = st.secrets.supabase.key
+            logger.info("✅ Credenciais carregadas do Streamlit Secrets")
         # Fallback para variáveis de ambiente
         else:
             url = os.getenv("SUPABASE_URL")
             key = os.getenv("SUPABASE_KEY")
+            logger.info("✅ Credenciais carregadas das variáveis de ambiente")
         
         if not url or not key:
-            raise ValueError(
-                "Credenciais do Supabase não encontradas. "
-                "Configure SUPABASE_URL e SUPABASE_KEY nos secrets ou variáveis de ambiente."
-            )
+            # ✅ Mensagem de erro mais detalhada
+            error_msg = """
+❌ Credenciais do Supabase não encontradas!
+
+Configure no arquivo .streamlit/secrets.toml:
+
+[supabase]
+url = "https://seu-projeto.supabase.co"
+key = "sua-chave-publica-anon"
+
+Ou configure variáveis de ambiente:
+- SUPABASE_URL
+- SUPABASE_KEY
+
+Obtenha as credenciais em: https://supabase.com/dashboard > Settings > API
+            """
+            raise ValueError(error_msg)
         
         logger.info("✅ Cliente Supabase inicializado com sucesso")
         return create_client(url, key)
