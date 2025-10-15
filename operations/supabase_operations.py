@@ -1,21 +1,37 @@
 import logging
-from typing import Any, Dict, List, Optional, TypeVar, Union
+from typing import Any, Dict, List, Optional, Union
 import pandas as pd
-from supabase import Client, create_client
+from supabase import Client
 from managers.supabase_config import get_cached_supabase_client
-
-from postgrest.types import APIResponse
 
 logger = logging.getLogger(__name__)
 
 # Tipo para dicionários de dados genéricos
 DataDict = Dict[str, Any]
-SupabaseResponse = APIResponse  # Tipo para respostas do Supabase
 
-def safe_get_data(response: SupabaseResponse) -> List[Dict[str, Any]]:
-    """Extrai dados de uma resposta do Supabase de forma segura."""
-    if hasattr(response, 'data') and isinstance(response.data, list):
-        return response.data
+def safe_get_data(response: Any) -> List[Dict[str, Any]]:
+    """
+    Extrai dados de uma resposta do Supabase de forma segura.
+    
+    Args:
+        response: Resposta da API do Supabase (postgrest)
+        
+    Returns:
+        Lista de dicionários com os dados ou lista vazia
+    """
+    # Tenta acessar o atributo 'data'
+    if hasattr(response, 'data'):
+        data = response.data
+        if isinstance(data, list):
+            return data
+        # Se for um único item, retorna como lista
+        elif data is not None:
+            return [data]
+    
+    # Fallback: tenta usar o response diretamente se for uma lista
+    if isinstance(response, list):
+        return response
+    
     return []
 
 class SupabaseOperations:
