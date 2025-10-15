@@ -9,6 +9,8 @@ from operations.supabase_operations import SupabaseOperations
 from AI.api_Operation import PDFQA
 from operations.cached_loaders import load_epis_df
 from operations.file_hash import calcular_hash_arquivo, verificar_hash_seguro
+from managers.supabase_storage import SupabaseStorageManager
+
 
 logger = logging.getLogger('segsisone_app.epi_manager')
 
