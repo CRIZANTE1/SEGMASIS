@@ -9,7 +9,7 @@ def validate_auth_config():
     Returns:
         tuple: (is_valid: bool, message: str)
     """
-    required_keys = ['provider', 'client_id', 'client_secret', 'cookie_secret', 'redirect_uri']
+    required_keys = ['client_id', 'client_secret', 'cookie_secret', 'redirect_uri']
     
     # Verifica se secrets existe
     if not hasattr(st, 'secrets'):
@@ -34,10 +34,9 @@ def validate_auth_config():
     if len(cookie_secret) < 64:
         st.warning(f"⚠️ cookie_secret tem apenas {len(cookie_secret)} caracteres. Recomendado: 64+")
     
-    # Valida formato do client_id para Google
-    if auth_config.provider.lower() == 'google':
-        if not auth_config.client_id.endswith('.apps.googleusercontent.com'):
-            return False, "client_id do Google deve terminar com .apps.googleusercontent.com"
+    # Valida formato do client_id (Google OAuth)
+    if not auth_config.client_id.endswith('.apps.googleusercontent.com'):
+        st.warning("⚠️ Este client_id não parece ser do Google OAuth. Verifique se está correto.")
     
     # Valida redirect_uri
     redirect_uri = auth_config.redirect_uri
@@ -53,6 +52,26 @@ def show_login_page():
         st.error("O sistema de autenticação não está disponível!")
         st.markdown("""
         ### Requisitos para o Sistema de Login
+
+        Para configurar corretamente o sistema de login:
+
+        1. **Streamlit:** Versão 1.44.0 ou superior
+        2. **Authlib:** Versão 1.3.2 ou superior
+        3. **Configuração:** Arquivo `.streamlit/secrets.toml` com a seção `[auth]`
+
+        **Exemplo de configuração:**
+        ```toml
+        [auth]
+        client_id = "seu-client-id.apps.googleusercontent.com"
+        client_secret = "seu-client-secret"
+        cookie_secret = "seu-cookie-secret-64-caracteres"
+        redirect_uri = "https://sua-app.streamlit.app"
+        ```
+
+        **Gerar cookie_secret:**
+        ```bash
+        python -c "import secrets; print(secrets.token_hex(64))"
+        ```
         """)
         return False
         
@@ -70,7 +89,6 @@ def show_login_page():
 # .streamlit/secrets.toml
 
 [auth]
-provider = "google"
 client_id = "seu-id.apps.googleusercontent.com"
 client_secret = "seu-secret"
 cookie_secret = "gere-um-secret-com-64-caracteres"
