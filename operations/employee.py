@@ -4,7 +4,6 @@ import streamlit as st
 from datetime import datetime, date, timedelta
 from operations.file_utils import infer_doc_type
 from AI.api_Operation import PDFQA
-from operations.sheet import SheetOperations
 import tempfile
 import os
 import re
