@@ -106,6 +106,20 @@ class EmployeeManager:
             self.employees_df = data['employees'] if data.get('employees') is not None else pd.DataFrame()
             self.aso_df = data['asos'] if data.get('asos') is not None else pd.DataFrame()
             self.training_df = data['trainings'] if data.get('trainings') is not None else pd.DataFrame()
+
+            # ✅ CORREÇÃO: Padroniza todas as colunas de ID para string para evitar erros de tipo.
+            id_cols_map = {
+                'companies_df': ['id'],
+                'employees_df': ['id', 'empresa_id'],
+                'aso_df': ['id', 'funcionario_id'],
+                'training_df': ['id', 'funcionario_id']
+            }
+            for df_name, cols in id_cols_map.items():
+                df = getattr(self, df_name)
+                if not df.empty:
+                    for col in cols:
+                        if col in df.columns:
+                            df[col] = df[col].astype(str)
             
             if not self.companies_df.empty:
                 self.companies_df.set_index('id', inplace=True, drop=False)
@@ -123,7 +137,7 @@ class EmployeeManager:
             self.data_loaded_successfully = True
             
         except Exception as e:
-            logger.error(f"Erro: {e}", exc_info=True)
+            logger.error(f"Erro no load_data: {e}", exc_info=True)
             self.data_loaded_successfully = False
 
     def _parse_flexible_date(self, date_string: str) -> date | None:
@@ -289,7 +303,6 @@ class EmployeeManager:
         company_id = self.supabase_ops.insert_row("empresas", new_data)
         if company_id:
             self.load_data()
-            # ✅ CORREÇÃO: Retorna o ID diretamente, sem tentar acessar ['id']
             return company_id, "Empresa cadastrada com sucesso"
         return None, "Falha ao obter ID da empresa."
 
@@ -298,7 +311,6 @@ class EmployeeManager:
         employee_id = self.supabase_ops.insert_row("funcionarios", new_data)
         if employee_id:
             self.load_data()
-            # ✅ CORREÇÃO: Retorna o ID diretamente, sem tentar acessar ['id']
             return employee_id, "Funcionário adicionado com sucesso"
         return None, "Erro ao adicionar funcionário."
 
@@ -505,23 +517,24 @@ class EmployeeManager:
 
     def get_company_name(self, company_id):
         if self.companies_df.empty: return f"ID {company_id}"
-        company = self.companies_df[self.companies_df['id'] == str(company_id)]
-        return company.iloc[0]['nome'] if not company.empty else f"ID {company_id}"
+        # Acessa o DataFrame pelo índice (que agora é uma string)
+        try:
+            return self.companies_df.loc[str(company_id), 'nome']
+        except KeyError:
+            return f"ID {company_id} (Não encontrado)"
 
     def get_employee_name(self, employee_id):
         if self.employees_df.empty: return f"ID {employee_id}"
-        employee = self.employees_df[self.employees_df['id'] == str(employee_id)]
-        return employee.iloc[0]['nome'] if not employee.empty else f"ID {employee_id}"
+        # Acessa o DataFrame pelo índice (que agora é uma string)
+        try:
+            return self.employees_df.loc[str(employee_id), 'nome']
+        except KeyError:
+            return f"ID {employee_id} (Não encontrado)"
 
     def get_employees_by_company(self, company_id: str, include_archived: bool = False):
         if not hasattr(self, '_employees_by_company'):
-            logger.warning("Índice _employees_by_company não foi criado. Usando busca direta.")
-            if self.employees_df.empty:
-                return pd.DataFrame()
-            result = self.employees_df[self.employees_df['empresa_id'] == str(company_id)]
-            if not include_archived and 'status' in result.columns:
-                result = result[result['status'].str.lower() == 'ativo']
-            return result
+            logger.debug("Nenhum funcionário registrado para esta unidade.")
+            return pd.DataFrame()
         
         try:
             company_employees = self._employees_by_company.get_group(str(company_id))
@@ -545,13 +558,11 @@ class EmployeeManager:
                 return False, "❌ Faltam campos obrigatórios ou datas inválidas"
             
             hoje = date.today()
-            if isinstance(data, datetime) and data.date() > hoje:
-                return False, f"❌ Data de realização ({format_date_safe(data, '%d/%m/%Y')}) não pode ser futura"
-            elif isinstance(data, date) and data > hoje:
+            data_date = data.date() if isinstance(data, datetime) else data
+            if data_date > hoje:
                 return False, f"❌ Data de realização ({format_date_safe(data, '%d/%m/%Y')}) não pode ser futura"
 
             venc_date = vencimento.date() if isinstance(vencimento, datetime) else vencimento
-            data_date = data.date() if isinstance(data, datetime) else data
             if venc_date <= data_date:
                 return False, f"❌ Vencimento deve ser após a data de realização"
             
