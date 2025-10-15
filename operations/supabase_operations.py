@@ -1,206 +1,192 @@
-import logging
-from typing import Any, Dict, List, Optional, Union
+import streamlit as st
 import pandas as pd
-from supabase import Client
-from managers.supabase_config import get_cached_supabase_client
+import logging
+from datetime import datetime
+from sqlalchemy import text
+from managers.supabase_config import get_database_engine
 
-logger = logging.getLogger(__name__)
-
-# Tipo para dicionários de dados genéricos
-DataDict = Dict[str, Any]
-
-def safe_get_data(response: Any) -> List[Dict[str, Any]]:
-    """
-    Extrai dados de uma resposta do Supabase de forma segura.
-    
-    Args:
-        response: Resposta da API do Supabase (postgrest)
-        
-    Returns:
-        Lista de dicionários com os dados ou lista vazia
-    """
-    # Tenta acessar o atributo 'data'
-    if hasattr(response, 'data'):
-        data = response.data
-        if isinstance(data, list):
-            return data
-        # Se for um único item, retorna como lista
-        elif data is not None:
-            return [data]
-    
-    # Fallback: tenta usar o response diretamente se for uma lista
-    if isinstance(response, list):
-        return response
-    
-    return []
+logger = logging.getLogger('segsisone_app.supabase_operations')
 
 class SupabaseOperations:
-    def __init__(self, unit_id: str | None = None):
-        """
-        Inicializa as operações do Supabase.
+    _instance = None
+
+    def __new__(cls, unit_id: str = None):
+        # ✅ Instância única POR unit_id
+        cache_key = f"_instance_{unit_id}"
+        if not hasattr(cls, cache_key) or getattr(cls, cache_key) is None:
+            logger.info(f"Criando instância de SupabaseOperations para unit_id: {unit_id}")
+            instance = super().__new__(cls)
+            setattr(cls, cache_key, instance)
+            instance._initialized = False
+        return getattr(cls, cache_key)
+
+    def __init__(self, unit_id: str = None):
+        if self._initialized:
+            return
         
-        Args:
-            unit_id: ID da unidade ou None para operações globais
-        """
         self.unit_id = unit_id
-        self.client = get_cached_supabase_client()
-        
-        # Lista de tabelas que não precisam de unit_id
         self.global_tables = ['usuarios', 'unidades', 'log_auditoria']
+        
+        try:
+            # Engine sem RLS por padrão
+            self.engine = get_database_engine()
+            logger.info(f"SupabaseOperations inicializado (unit_id: {unit_id})")
+        except Exception as e:
+            logger.critical(f"Falha ao inicializar SupabaseOperations: {e}")
+            self.engine = None
+        
+        self._initialized = True
+
+    def get_engine_with_rls(self):
+        """Cria engine com RLS para o usuário autenticado"""
+        user_email = None
+        
+        if hasattr(st, 'session_state'):
+            user_email = st.session_state.get('user_info', {}).get('email')
+            if not user_email:
+                user_email = st.session_state.get('authenticated_user_email')
+        
+        if not user_email:
+            logger.critical("⚠️ TENTATIVA DE ACESSO SEM AUTENTICAÇÃO!")
+            raise PermissionError("Usuário não autenticado. RLS não pode ser aplicado.")
+        
+        logger.debug(f"Criando engine com RLS para: {user_email}")
+        return get_database_engine(user_email)
 
     def get_table_data(self, table_name: str) -> pd.DataFrame:
-        """
-        Retrieves all data from a table for the given unit_id and returns it as a pandas DataFrame.
-        Se unit_id for None, retorna dados globais (para tabelas como 'usuarios' e 'unidades').
-        
-        Args:
-            table_name: Nome da tabela para buscar os dados
-            
-        Returns:
-            DataFrame com os dados da tabela
-        """
-        # ✅ Lista de tabelas permitidas (whitelist)
-        allowed_tables = [
-            'usuarios', 'unidades', 'log_auditoria',
-            'empresas', 'companies',  # ✅ Permite ambos
-            'funcionarios', 'employees',
-            'asos', 'treinamentos', 'trainings',
-            'fichas_epi', 'documentos_empresa', 'plano_acao',
-            'funcoes', 'matriz_treinamentos'
-        ]
+        """Carrega todos os dados de uma tabela"""
+        if not self.engine:
+            logger.error("Database engine não está disponível")
+            return pd.DataFrame()
         
         try:
-            # Valida o nome da tabela
-            if not table_name or not isinstance(table_name, str):
-                logger.error(f"Nome da tabela inválido: {table_name}")
-                return pd.DataFrame()
-            
-            # ✅ Valida se é uma tabela permitida
-            if table_name not in allowed_tables:
-                logger.error(f"Acesso negado à tabela não permitida: {table_name}")
-                return pd.DataFrame()
-
             # Decide se usa filtro de unit_id
             if table_name in self.global_tables or self.unit_id is None:
-                query = self.client.table(table_name).select("*")
+                query = text(f'SELECT * FROM "{table_name}"')
+                params = {}
             else:
-                query = self.client.table(table_name).select("*").eq("unit_id", self.unit_id)
+                query = text(f'SELECT * FROM "{table_name}" WHERE unit_id = :unit_id')
+                params = {"unit_id": self.unit_id}
             
-            # Executa a query
-            try:
-                response = query.execute()
-            except Exception as e:
-                logger.error(f"Erro na query Supabase para {table_name}: {e}")
-                return pd.DataFrame()
+            with self.engine.connect() as conn:
+                df = pd.read_sql(query, conn, params=params)
             
-            # Converte para DataFrame usando o safe_get_data
-            return pd.DataFrame(safe_get_data(response))
+            return df
                 
         except Exception as e:
-            logger.error(f"Erro ao obter dados da tabela {table_name}: {e}")
+            logger.error(f"Erro ao carregar '{table_name}': {e}")
             return pd.DataFrame()
 
-    def insert_row(self, table_name: str, data: DataDict) -> Optional[DataDict]:
-        """
-        Inserts a new row into a table and returns the inserted row.
-        Adiciona unit_id automaticamente para tabelas que não são globais.
+    def insert_row(self, table_name: str, data: dict) -> dict | None:
+        """Insere uma linha e retorna o registro inserido"""
+        if not self.engine:
+            return None
         
-        Args:
-            table_name: Nome da tabela para inserção
-            data: Dicionário com os dados a serem inseridos
-            
-        Returns:
-            Dicionário com os dados inseridos ou None em caso de erro
-        """
         try:
-            # Só adiciona unit_id se não for tabela global
+            # Adiciona unit_id se não for tabela global
             if table_name not in self.global_tables and self.unit_id is not None:
                 data['unit_id'] = self.unit_id
             
-            response = self.client.table(table_name).insert(data).execute()
-            inserted_data = safe_get_data(response)
-            return inserted_data[0] if inserted_data else None
+            columns = ', '.join([f'"{k}"' for k in data.keys()])
+            placeholders = ', '.join([f':{k}' for k in data.keys()])
+            query = text(f'''
+                INSERT INTO "{table_name}" ({columns})
+                VALUES ({placeholders})
+                RETURNING *
+            ''')
+            
+            with self.engine.connect() as conn:
+                result = conn.execute(query, data)
+                conn.commit()
+                
+                row = result.fetchone()
+                if row:
+                    return dict(row._mapping)
+            
+            return None
             
         except Exception as e:
-            logger.error(f"Error inserting row into {table_name}: {e}")
+            logger.error(f"Erro ao inserir em '{table_name}': {e}")
             return None
 
-    def insert_batch(self, table_name: str, data: List[DataDict]) -> Optional[List[DataDict]]:
-        """
-        Inserts a batch of new rows into a table.
-        Insere linha por linha para evitar falhas totais em caso de erro parcial.
+    def insert_batch(self, table_name: str, data_list: list[dict]) -> list[dict] | None:
+        """Insere múltiplas linhas"""
+        successful_inserts = []
         
-        Args:
-            table_name: Nome da tabela para inserção
-            data: Lista de dicionários com os dados a serem inseridos
-            
-        Returns:
-            Lista com os dados inseridos com sucesso ou None em caso de erro total
-        """
-        try:
-            successful_inserts: List[DataDict] = []
-            failed_inserts: List[DataDict] = []
-            
-            for row in data:
-                try:
-                    # Só adiciona unit_id se não for tabela global
-                    if table_name not in self.global_tables and self.unit_id is not None:
-                        row['unit_id'] = self.unit_id
-                    
-                    response = self.client.table(table_name).insert(row).execute()
-                    inserted_data = safe_get_data(response)
-                    if inserted_data:
-                        successful_inserts.append(inserted_data[0])
-                except Exception as row_error:
-                    logger.error(f"Error inserting single row into {table_name}: {row_error}")
-                    failed_inserts.append(row)
-            
-            if failed_inserts:
-                logger.warning(
-                    f"Batch insert into {table_name}: "
-                    f"{len(successful_inserts)} succeeded, {len(failed_inserts)} failed"
-                )
-            
-            return successful_inserts if successful_inserts else None
-            
-        except Exception as e:
-            logger.error(f"Critical error in batch insert for {table_name}: {e}")
-            return None
+        for row_data in data_list:
+            result = self.insert_row(table_name, row_data)
+            if result:
+                successful_inserts.append(result)
+        
+        return successful_inserts if successful_inserts else None
 
-    def update_row(self, table_name: str, row_id: str, data: DataDict) -> Optional[DataDict]:
-        """
-        Updates a row in a table by its id.
+    def update_row(self, table_name: str, row_id: str, data: dict) -> dict | None:
+        """Atualiza uma linha pelo ID"""
+        if not self.engine or not data:
+            return None
         
-        Args:
-            table_name: Nome da tabela para atualização
-            row_id: ID da linha a ser atualizada
-            data: Dicionário com os dados para atualização
-            
-        Returns:
-            Dicionário com os dados atualizados ou None em caso de erro
-        """
         try:
-            response = self.client.table(table_name).update(data).eq("id", row_id).execute()
-            updated_data = safe_get_data(response)
-            return updated_data[0] if updated_data else None
+            set_clause = ', '.join([f'"{k}" = :{k}' for k in data.keys()])
+            query = text(f'''
+                UPDATE "{table_name}"
+                SET {set_clause}
+                WHERE id = :id
+                RETURNING *
+            ''')
+            
+            params = {**data, 'id': row_id}
+            
+            with self.engine.connect() as conn:
+                result = conn.execute(query, params)
+                conn.commit()
+                
+                row = result.fetchone()
+                if row:
+                    return dict(row._mapping)
+            
+            return None
+            
         except Exception as e:
-            logger.error(f"Error updating row in {table_name}: {e}")
+            logger.error(f"Erro ao atualizar '{table_name}': {e}")
             return None
 
     def delete_row(self, table_name: str, row_id: str) -> bool:
-        """
-        Deletes a row from a table by its id.
-        
-        Args:
-            table_name: Nome da tabela
-            row_id: ID da linha a ser excluída
-            
-        Returns:
-            True se a exclusão foi bem sucedida, False caso contrário
-        """
-        try:
-            response = self.client.table(table_name).delete().eq("id", row_id).execute()
-            return bool(safe_get_data(response))
-        except Exception as e:
-            logger.error(f"Error deleting row from {table_name}: {e}")
+        """Deleta uma linha pelo ID"""
+        if not self.engine:
             return False
+        
+        try:
+            query = text(f'DELETE FROM "{table_name}" WHERE id = :id')
+            
+            with self.engine.connect() as conn:
+                result = conn.execute(query, {'id': row_id})
+                conn.commit()
+                
+                return result.rowcount > 0
+            
+        except Exception as e:
+            logger.error(f"Erro ao deletar de '{table_name}': {e}")
+            return False
+
+    def get_by_field(self, table_name: str, field: str, value) -> pd.DataFrame:
+        """Busca registros por um campo específico"""
+        if not self.engine:
+            return pd.DataFrame()
+        
+        try:
+            query = text(f'SELECT * FROM "{table_name}" WHERE "{field}" = :value')
+            
+            with self.engine.connect() as conn:
+                df = pd.read_sql(query, conn, params={'value': value})
+            
+            return df
+        except Exception as e:
+            logger.error(f"Erro ao buscar em '{table_name}': {e}")
+            return pd.DataFrame()
+
+    def get_by_field_no_rls(self, table_name: str, field: str, value) -> pd.DataFrame:
+        """
+        Busca registros SEM aplicar RLS - usado apenas para autenticação.
+        ⚠️ USE COM EXTREMO CUIDADO!
+        """
+        return self.get_by_field(table_name, field, value)
