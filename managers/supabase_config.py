@@ -127,4 +127,8 @@ def get_bucket_name(doc_type: str) -> str:
     """Retorna o nome do bucket correto para cada tipo de documento"""
     bucket_map = {
         'aso': STORAGE_BUCKETS['documentos'],
-        'treinamento': STORAGE_BUCKET
+        'treinamento': STORAGE_BUCKETS['documentos'],
+        'epi': STORAGE_BUCKETS['fichas_epi'],
+        'doc_empresa': STORAGE_BUCKETS['docs_empresa'],
+    }
+    return bucket_map.get(doc_type.lower(), STORAGE_BUCKETS['documentos'])
