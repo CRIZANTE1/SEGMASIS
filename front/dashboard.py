@@ -22,7 +22,7 @@ def format_company_display(company_id, companies_df):
     try:
         row = companies_df[companies_df['id'] == str(company_id)].iloc[0]
         name, status = row.get('nome', f"ID {company_id}"), str(row.get('status', 'Ativo')).lower()
-        return f"️ {name} (Arquivada)" if status == 'arquivado' else f"{name} - {row.get('cnpj', 'N/A')}"
+        return f"🗃️ {name} (Arquivada)" if status == 'arquivado' else f"{name} - {row.get('cnpj', 'N/A')}"
     except (IndexError, KeyError): 
         return f"Empresa ID {company_id} (Não encontrada)"
 
@@ -87,7 +87,7 @@ def show_dashboard_page():
     logger.info("Iniciando a renderização da página do dashboard.")
     
     if st.session_state.get('is_global_view', False):
-        st.title(" Dashboard Global - Todas as Unidades")
+        st.title("📊 Dashboard Global - Todas as Unidades")
         st.info("A visão detalhada do dashboard global está na página de Administração.")
         return
     
@@ -103,32 +103,39 @@ def show_dashboard_page():
     is_single_mode = st.session_state.get('is_single_company_mode', False)
 
     if is_single_mode:
-        st.title(f" Dashboard de Conformidade: {st.session_state.get('single_company_name')}")
+        st.title(f"📊 Dashboard de Conformidade: {st.session_state.get('single_company_name')}")
         selected_company = st.session_state.get('single_company_id')
     else:
-        st.title(" Dashboard de Conformidade")
+        st.title("📊 Dashboard de Conformidade")
         company_options = [None] + employee_manager.companies_df['id'].astype(str).tolist()
         selected_company = st.selectbox(
-            " Selecione uma empresa para ver os detalhes:",
+            "🏢 Selecione uma empresa para ver os detalhes:",
             options=company_options,
             format_func=lambda cid: format_company_display(cid, employee_manager.companies_df),
             key="company_selector",
             placeholder="Selecione uma empresa..."
         )
 
+    # ✅ DEFINIÇÃO DAS ABAS
     tab_list = [
-        " Situação Geral", 
-        " Adicionar Doc. Empresa", 
-        " Adicionar ASO", 
-        " Adicionar Treinamento", 
-        " Adicionar Ficha de EPI", 
+        "📊 Situação Geral", 
+        "📄 Adicionar Doc. Empresa", 
+        "🩺 Adicionar ASO", 
+        "🎓 Adicionar Treinamento", 
+        "🦺 Adicionar Ficha de EPI", 
         "⚙️ Gerenciar Registros"
     ]
     
-    tab_situacao, tab_add_doc_empresa, tab_add_aso, tab_add_treinamento, tab_add_epi, tab_manage = st.tabs(tab_list)
+    tabs = st.tabs(tab_list)
+    tab_situacao = tabs[0]
+    tab_add_doc_empresa = tabs[1]
+    tab_add_aso = tabs[2]
+    tab_add_treinamento = tabs[3]
+    tab_add_epi = tabs[4]
+    tab_manage = tabs[5]
 
-    # ============================================
-    # ABA: SITUAÇÃO GERAL (código inalterado)
+    # =============================================
+    # ABA: SITUAÇÃO GERAL
     # ============================================
     with tab_situacao:
         if not selected_company:
@@ -260,8 +267,11 @@ def show_dashboard_page():
                                         tipo = str(row.get('tipo_treinamento', 'N/A')).strip().title() if 'tipo_treinamento' in row.index else 'N/A'
                                         
                                         # NR-10 SEP
-                                        if 'SEP' in norma.upper() or 'SEP' in modulo.upper():
-                                            return f"⚡ NR-10 SEP ({tipo})"
+                                        if 'NR-10' in norma.upper() or 'NR-10' in modulo.upper():
+                                            if 'SEP' in norma.upper() or 'SEP' in modulo.upper():
+                                                return f"⚡ NR-10 SEP ({tipo})"
+                                            else:
+                                                return f"⚡ NR-10 ({tipo})"
                                         
                                         # Normas com módulos
                                         if modulo and modulo not in ['N/A', 'nan', '', 'Nan']:
@@ -434,8 +444,8 @@ def show_dashboard_page():
                 st.error("❌ Ocorreu um erro inesperado ao tentar exibir os detalhes desta empresa.")
                 st.exception(e)
 
-    # ============================================
-    # ABA: ADICIONAR DOCUMENTO DA EMPRESA (INTEGRADO)
+    # =============================================
+    # ABA: ADICIONAR DOCUMENTO DA EMPRESA
     # ============================================
     with tab_add_doc_empresa:
         if not selected_company:
@@ -699,8 +709,8 @@ def show_dashboard_page():
                             else:
                                 st.error("❌ Falha ao fazer upload do arquivo.")
 
-    # ============================================
-    # ABA: ADICIONAR ASO (INTEGRADO)
+    # =============================================
+    # ABA: ADICIONAR ASO
     # ============================================
     with tab_add_aso:
         if not selected_company:
@@ -1037,411 +1047,410 @@ def show_dashboard_page():
             else:
                 st.warning("⚠️ Cadastre funcionários nesta empresa primeiro.")
 
-# ============================================
-# ABA: ADICIONAR TREINAMENTO (CORRIGIDA)
-# ============================================
-with tab_add_treinamento:
-    if not selected_company:
-        st.info("👈 Selecione uma empresa na aba 'Situação Geral' primeiro.")
-    elif check_permission(level='editor'):
-        st.subheader("🎓 Adicionar Novo Treinamento")
-        mostrar_info_normas()
-        current_employees = employee_manager.get_employees_by_company(selected_company)
-        
-        if not current_employees.empty:
-            selected_employee_training = st.selectbox(
-                "👤 Funcionário *", 
-                current_employees['id'].tolist(), 
-                format_func=employee_manager.get_employee_name, 
-                key="training_employee_add",
-                help="Selecione o funcionário que realizou o treinamento"
-            )
-            
-            has_ai_access = check_feature_permission('premium_ia')
-            
-            if has_ai_access:
-                entry_mode_training = st.radio(
-                    "Escolha o modo de entrada:",
-                    ["🤖 Upload com IA (Automático)", "✍️ Entrada Manual"],
-                    horizontal=True,
-                    key="training_entry_mode"
-                )
-            else:
-                entry_mode_training = "✍️ Entrada Manual"
-                st.info("💡 **Modo Manual Ativo** | Upgrade para Premium IA para análise automática de certificados.")
-            
-            # --- MODO IA ---
-            if "Upload com IA" in entry_mode_training:
-                st.file_uploader(
-                    "📎 Anexar Certificado (PDF)", 
-                    type=['pdf'], 
-                    key="training_uploader_tab", 
-                    on_change=process_training_pdf,
-                    help="Faça upload do certificado de treinamento em PDF"
-                )
-                
-                if st.session_state.get('Treinamento_info_para_salvar'):
-                    training_info = st.session_state['Treinamento_info_para_salvar']
-                    
-                    with st.form("confirm_training_form"):
-                        st.markdown("### ✏️ Confirme e Edite as Informações Extraídas")
-
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            edited_data = st.date_input(
-                                "📅 Data de Realização *", 
-                                value=training_info.get('data'),
-                                help="Data em que o treinamento foi concluído"
-                            )
-                        
-                        with col2:
-                            norma_options = sorted(
-                                list(employee_manager.nr_config.keys()) + 
-                                list(employee_manager.nr20_config.keys())
-                            )
-                            
-                            current_norma = training_info.get('norma', '')
-                            try:
-                                default_norma_index = norma_options.index(current_norma)
-                            except ValueError:
-                                default_norma_index = 0
-                            
-                            edited_norma = st.selectbox(
-                                "📋 Norma *", 
-                                options=norma_options, 
-                                index=default_norma_index,
-                                help="Norma Regulamentadora do treinamento"
-                            )
-                        
-                        col3, col4 = st.columns(2)
-                        
-                        with col3:
-                            current_modulo = training_info.get('modulo', 'N/A')
-                            
-                            if edited_norma == "NR-20":
-                                modulo_options = ['Básico', 'Intermediário', 'Avançado I', 'Avançado II']
-                                try:
-                                    default_mod_index = modulo_options.index(current_modulo)
-                                except ValueError:
-                                    default_mod_index = 0
-                                edited_modulo = st.selectbox("🎯 Módulo NR-20 *", modulo_options, index=default_mod_index)
-                            elif edited_norma == "NR-33":
-                                modulo_options = ['Trabalhador Autorizado', 'Supervisor']
-                                try:
-                                    default_mod_index = modulo_options.index(current_modulo)
-                                except ValueError:
-                                    default_mod_index = 0
-                                edited_modulo = st.selectbox("🎯 Módulo NR-33 *", modulo_options, index=default_mod_index)
-                            elif "NR-10" in edited_norma:
-                                if "SEP" in edited_norma:
-                                    edited_modulo = "SEP"
-                                    st.info("💡 Módulo: **SEP** (Sistema Elétrico de Potência)")
-                                else:
-                                    edited_modulo = st.text_input("🎯 Módulo", value=current_modulo)
-                            else:
-                                edited_modulo = st.text_input("🎯 Módulo (opcional)", value=current_modulo)
-                        
-                        with col4:
-                            tipo_options = ["formação", "reciclagem"]
-                            current_tipo = training_info.get('tipo_treinamento', 'formação').lower()
-                            try:
-                                default_tipo_index = tipo_options.index(current_tipo)
-                            except ValueError:
-                                default_tipo_index = 0
-                            
-                            edited_tipo = st.selectbox(
-                                "🔄 Tipo *", 
-                                tipo_options, 
-                                index=default_tipo_index,
-                                help="Formação inicial ou reciclagem"
-                            )
-                        
-                        current_ch = training_info.get('carga_horaria', 0)
-                        edited_ch = st.number_input(
-                            "⏱️ Carga Horária (horas) *", 
-                            min_value=0, 
-                            max_value=200,
-                            value=int(current_ch) if current_ch else 0,
-                            help="Carga horária total do treinamento"
-                        )
-                        
-                        st.markdown("#### ⏰ Vencimento")
-                        
-                        vencimento_calculado = employee_manager.calcular_vencimento_treinamento(
-                            edited_data, edited_norma, edited_modulo, edited_tipo
-                        )
-                        
-                        if vencimento_calculado:
-                            st.success(f"✅ Vencimento calculado automaticamente: **{vencimento_calculado.strftime('%d/%m/%Y')}**")
-                            edited_vencimento = st.date_input(
-                                "Data de Vencimento * (editável)",
-                                value=vencimento_calculado,
-                                help="Vencimento calculado pela norma - você pode ajustar se necessário"
-                            )
-                        else:
-                            st.warning("⚠️ Não foi possível calcular o vencimento automaticamente")
-                            edited_vencimento = st.date_input(
-                                "Data de Vencimento *",
-                                value=edited_data + pd.DateOffset(years=2),
-                                help="Defina manualmente a data de vencimento"
-                            )
-                        
-                        observacoes_training = st.text_area(
-                            "📝 Observações (opcional)",
-                            placeholder="Ex: Treinamento realizado in company, instrutor específico, etc.",
-                            help="Campo livre para anotações sobre este treinamento"
-                        )
-
-                        display_audit_results(training_info.get('audit_result'))
-
-                        col_confirm, col_cancel = st.columns([3, 1])
-                        
-                        with col_confirm:
-                            confirm_button = st.form_submit_button(
-                                "💾 Confirmar e Salvar Treinamento", 
-                                type="primary",
-                                use_container_width=True
-                            )
-                        
-                        with col_cancel:
-                            cancel_button = st.form_submit_button(
-                                "❌ Cancelar",
-                                use_container_width=True
-                            )
-                        
-                        if cancel_button:
-                            for key in list(st.session_state.keys()):
-                                if key.startswith('Treinamento_'):
-                                    del st.session_state[key]
-                            st.rerun()
-                        
-                        if confirm_button:
-                            if edited_vencimento <= edited_data:
-                                st.error("❌ A data de vencimento deve ser posterior à data de realização!")
-                                st.stop()
-                            
-                            if edited_ch <= 0:
-                                st.error("❌ A carga horária deve ser maior que zero!")
-                                st.stop()
-                            
-                            with st.spinner("💾 Salvando treinamento..."):
-                                anexo = st.session_state.Treinamento_anexo_para_salvar
-                                arquivo_hash = st.session_state.get('Treinamento_hash_para_salvar')
-                                emp_id = st.session_state.Treinamento_funcionario_para_salvar
-                                emp_name = employee_manager.get_employee_name(emp_id)
-                                nome_arquivo = f"TRAINING_{emp_name.replace(' ', '_')}_{edited_norma.replace('-', '')}_{edited_data.strftime('%Y%m%d')}.pdf"
-                                
-                                arquivo_id = employee_manager.upload_documento_e_obter_link(anexo, nome_arquivo)
-                                
-                                if arquivo_id:
-                                    training_data = {
-                                        'funcionario_id': emp_id, 
-                                        'anexo': arquivo_id, 
-                                        'arquivo_hash': arquivo_hash,
-                                        'data': edited_data, 
-                                        'norma': edited_norma, 
-                                        'tipo_treinamento': edited_tipo,
-                                        'carga_horaria': edited_ch, 
-                                        'vencimento': edited_vencimento, 
-                                        'modulo': edited_modulo
-                                    }
-                                    
-                                    training_id = employee_manager.add_training(training_data)
-                                    
-                                    if training_id:
-                                        st.success("✅ Treinamento salvo com sucesso!")
-                                        
-                                        audit_result = training_info.get('audit_result')
-                                        if audit_result and 'não conforme' in audit_result.get('summary', '').lower():
-                                            nr_analyzer = st.session_state.get('nr_analyzer')
-                                            if nr_analyzer:
-                                                items_added = nr_analyzer.create_action_plan_from_audit(
-                                                    audit_result, selected_company, training_id, employee_id=emp_id
-                                                )
-                                                if items_added > 0:
-                                                    st.info(f"📋 {items_added} não conformidade(s) adicionada(s) ao Plano de Ação")
-                                        
-                                        for key in list(st.session_state.keys()):
-                                            if key.startswith('Treinamento_'):
-                                                del st.session_state[key]
-                                        st.rerun()
-                                    else:
-                                        st.error("❌ Falha ao salvar o treinamento no banco de dados.")
-                                else:
-                                    st.error("❌ Falha ao fazer upload do arquivo.")
-            
-            # --- MODO MANUAL ---
-            else:
-                st.markdown("### ✍️ Cadastro Manual de Treinamento")
-                with st.form("manual_training_form"):
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        manual_data = st.date_input("📅 Data de Realização *", value=date.today(), max_value=date.today())
-                    with col2:
-                        norma_options = sorted(list(employee_manager.nr_config.keys()) + ['NR-20'])
-                        manual_norma = st.selectbox("📋 Norma *", options=norma_options)
-                    
-                    col3, col4 = st.columns(2)
-                    with col3:
-                        if manual_norma == "NR-20":
-                            manual_modulo = st.selectbox("🎯 Módulo NR-20 *", ['Básico', 'Intermediário', 'Avançado I', 'Avançado II'])
-                        elif manual_norma == "NR-33":
-                            manual_modulo = st.selectbox("🎯 Módulo NR-33 *", ['Trabalhador Autorizado', 'Supervisor'])
-                        else:
-                            manual_modulo = st.text_input("🎯 Módulo (opcional)")
-                    with col4:
-                        manual_tipo = st.selectbox("🔄 Tipo *", ["formação", "reciclagem"])
-                    
-                    manual_ch = st.number_input("⏱️ Carga Horária (horas) *", min_value=1, max_value=200, value=8)
-                    
-                    st.markdown("#### ⏰ Vencimento")
-                    vencimento_manual_calc = employee_manager.calcular_vencimento_treinamento(manual_data, manual_norma, manual_modulo, manual_tipo)
-                    manual_vencimento = st.date_input("Data de Vencimento *", value=vencimento_manual_calc if vencimento_manual_calc else manual_data + pd.DateOffset(years=1))
-                    
-                    manual_training_arquivo = st.file_uploader("📎 Anexar Certificado em PDF *", type=['pdf'], key="manual_training_file")
-                    
-                    col_submit, col_cancel = st.columns([3, 1])
-                    
-                    with col_submit:
-                        submit_manual_training = st.form_submit_button("💾 Salvar Treinamento", type="primary", use_container_width=True)
-                    
-                    with col_cancel:
-                        cancel_manual_training = st.form_submit_button("❌ Cancelar", use_container_width=True)
-                    
-                    if cancel_manual_training:
-                        st.rerun()
-                    
-                    if submit_manual_training:
-                        if not manual_training_arquivo:
-                            st.error("❌ É obrigatório anexar o certificado em PDF!")
-                            st.stop()
-                        if manual_vencimento <= manual_data:
-                            st.error("❌ O vencimento deve ser após a data de realização!")
-                            st.stop()
-                        
-                        with st.spinner("💾 Salvando..."):
-                            from operations.file_hash import calcular_hash_arquivo
-                            arquivo_hash = calcular_hash_arquivo(manual_training_arquivo)
-                            emp_name = employee_manager.get_employee_name(selected_employee_training)
-                            nome_arquivo = f"TRAINING_{emp_name.replace(' ', '_')}_{manual_norma.replace('-', '')}_{manual_data.strftime('%Y%m%d')}.pdf"
-                            arquivo_id = employee_manager.upload_documento_e_obter_link(manual_training_arquivo, nome_arquivo)
-                            
-                            if arquivo_id:
-                                training_data = {
-                                    'funcionario_id': selected_employee_training,
-                                    'anexo': arquivo_id, 
-                                    'arquivo_hash': arquivo_hash, 
-                                    'data': manual_data,
-                                    'norma': manual_norma, 
-                                    'tipo_treinamento': manual_tipo, 
-                                    'carga_horaria': manual_ch,
-                                    'vencimento': manual_vencimento, 
-                                    'modulo': manual_modulo
-                                }
-                                if employee_manager.add_training(training_data):
-                                    st.success("✅ Treinamento salvo com sucesso!")
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Falha ao salvar no banco de dados.")
-                            else:
-                                st.error("❌ Falha no upload do arquivo.")
-        else:
-            st.warning("⚠️ Cadastre funcionários nesta empresa primeiro.")
-
-
-# ============================================
-# ABA: ADICIONAR FICHA DE EPI (CORRIGIDA)
-# ============================================
-with tab_add_epi:
-    if not selected_company:
-        st.info("👈 Selecione uma empresa na aba 'Situação Geral' primeiro.")
-    elif check_permission(level='editor'):
-        st.subheader("🦺 Adicionar Ficha de EPI")
-        
-        if check_feature_permission('premium_ia'):
+    # =============================================
+    # ABA: ADICIONAR TREINAMENTO
+    # ============================================
+    with tab_add_treinamento:
+        if not selected_company:
+            st.info("👈 Selecione uma empresa na aba 'Situação Geral' primeiro.")
+        elif check_permission(level='editor'):
+            st.subheader("🎓 Adicionar Novo Treinamento")
+            mostrar_info_normas()
             current_employees = employee_manager.get_employees_by_company(selected_company)
             
             if not current_employees.empty:
-                st.selectbox(
-                    "👤 Funcionário", 
+                selected_employee_training = st.selectbox(
+                    "👤 Funcionário *", 
                     current_employees['id'].tolist(), 
                     format_func=employee_manager.get_employee_name, 
-                    key="epi_employee_add"
-                )
-                st.file_uploader(
-                    "📎 Anexar Ficha de EPI (PDF)", 
-                    type=['pdf'], 
-                    key="epi_uploader_tab", 
-                    on_change=process_epi_pdf,
-                    help="Faça upload da ficha de controle de entrega de EPI em PDF"
+                    key="training_employee_add",
+                    help="Selecione o funcionário que realizou o treinamento"
                 )
                 
-                if st.session_state.get('epi_info_para_salvar'):
-                    epi_info = st.session_state['epi_info_para_salvar']
+                has_ai_access = check_feature_permission('premium_ia')
+                
+                if has_ai_access:
+                    entry_mode_training = st.radio(
+                        "Escolha o modo de entrada:",
+                        ["🤖 Upload com IA (Automático)", "✍️ Entrada Manual"],
+                        horizontal=True,
+                        key="training_entry_mode"
+                    )
+                else:
+                    entry_mode_training = "✍️ Entrada Manual"
+                    st.info("💡 **Modo Manual Ativo** | Upgrade para Premium IA para análise automática de certificados.")
+                
+                # --- MODO IA ---
+                if "Upload com IA" in entry_mode_training:
+                    st.file_uploader(
+                        "📎 Anexar Certificado (PDF)", 
+                        type=['pdf'], 
+                        key="training_uploader_tab", 
+                        on_change=process_training_pdf,
+                        help="Faça upload do certificado de treinamento em PDF"
+                    )
                     
-                    if epi_info:
-                        with st.form("confirm_epi_form"):
-                            st.markdown("### ✏️ Confirme as Informações Extraídas")
+                    if st.session_state.get('Treinamento_info_para_salvar'):
+                        training_info = st.session_state['Treinamento_info_para_salvar']
+                        
+                        with st.form("confirm_training_form"):
+                            st.markdown("### ✏️ Confirme e Edite as Informações Extraídas")
+
+                            col1, col2 = st.columns(2)
                             
-                            nome_funcionario = epi_info.get('nome_funcionario', 'N/A')
-                            st.info(f"👤 **Funcionário identificado no PDF:** {nome_funcionario}")
+                            with col1:
+                                edited_data = st.date_input(
+                                    "📅 Data de Realização *", 
+                                    value=training_info.get('data'),
+                                    help="Data em que o treinamento foi concluído"
+                                )
                             
-                            itens_epi = epi_info.get('itens_epi', [])
-                            
-                            if itens_epi:
-                                st.markdown(f"**Total de itens encontrados:** {len(itens_epi)}")
-                                epi_df = pd.DataFrame(itens_epi)
-                                st.dataframe(epi_df, use_container_width=True, hide_index=True)
+                            with col2:
+                                norma_options = sorted(
+                                    list(employee_manager.nr_config.keys()) + 
+                                    list(employee_manager.nr20_config.keys())
+                                )
                                 
-                                if st.form_submit_button("💾 Confirmar e Salvar Ficha de EPI", type="primary"):
-                                    with st.spinner("💾 Salvando..."):
-                                        anexo = st.session_state.epi_anexo_para_salvar
-                                        arquivo_hash = st.session_state.get('epi_hash_para_salvar')
-                                        emp_id = st.session_state.epi_funcionario_para_salvar
-                                        emp_name = employee_manager.get_employee_name(emp_id)
-                                        nome_arquivo = f"EPI_{emp_name.replace(' ', '_')}_{date.today().strftime('%Y%m%d')}.pdf"
-                                        
-                                        arquivo_id = employee_manager.upload_documento_e_obter_link(anexo, nome_arquivo)
-                                        
-                                        if arquivo_id:
-                                            saved_ids = epi_manager.add_epi_records(
-                                                emp_id, arquivo_id, itens_epi, arquivo_hash
-                                            )
-                                            
-                                            if saved_ids:
-                                                st.success(f"✅ Ficha de EPI salva com sucesso! {len(saved_ids)} item(ns) cadastrado(s).")
-                                                
-                                                for key in list(st.session_state.keys()):
-                                                    if key.startswith('epi_'):
-                                                        del st.session_state[key]
-                                                st.rerun()
-                                            else:
-                                                st.error("❌ Falha ao salvar os itens de EPI.")
+                                current_norma = training_info.get('norma', '')
+                                try:
+                                    default_norma_index = norma_options.index(current_norma)
+                                except ValueError:
+                                    default_norma_index = 0
+                                
+                                edited_norma = st.selectbox(
+                                    "📋 Norma *", 
+                                    options=norma_options, 
+                                    index=default_norma_index,
+                                    help="Norma Regulamentadora do treinamento"
+                                )
+                            
+                            col3, col4 = st.columns(2)
+                            
+                            with col3:
+                                current_modulo = training_info.get('modulo', 'N/A')
+                                
+                                if edited_norma == "NR-20":
+                                    modulo_options = ['Básico', 'Intermediário', 'Avançado I', 'Avançado II']
+                                    try:
+                                        default_mod_index = modulo_options.index(current_modulo)
+                                    except ValueError:
+                                        default_mod_index = 0
+                                    edited_modulo = st.selectbox("🎯 Módulo NR-20 *", modulo_options, index=default_mod_index)
+                                elif edited_norma == "NR-33":
+                                    modulo_options = ['Trabalhador Autorizado', 'Supervisor']
+                                    try:
+                                        default_mod_index = modulo_options.index(current_modulo)
+                                    except ValueError:
+                                        default_mod_index = 0
+                                    edited_modulo = st.selectbox("🎯 Módulo NR-33 *", modulo_options, index=default_mod_index)
+                                elif "NR-10" in edited_norma:
+                                    if "SEP" in edited_norma:
+                                        edited_modulo = "SEP"
+                                        st.info("💡 Módulo: **SEP** (Sistema Elétrico de Potência)")
+                                    else:
+                                        edited_modulo = st.text_input("🎯 Módulo", value=current_modulo)
+                                else:
+                                    edited_modulo = st.text_input("🎯 Módulo (opcional)", value=current_modulo)
+                            
+                            with col4:
+                                tipo_options = ["formação", "reciclagem"]
+                                current_tipo = training_info.get('tipo_treinamento', 'formação').lower()
+                                try:
+                                    default_tipo_index = tipo_options.index(current_tipo)
+                                except ValueError:
+                                    default_tipo_index = 0
+                                
+                                edited_tipo = st.selectbox(
+                                    "🔄 Tipo *", 
+                                    tipo_options, 
+                                    index=default_tipo_index,
+                                    help="Formação inicial ou reciclagem"
+                                )
+                            
+                            current_ch = training_info.get('carga_horaria', 0)
+                            edited_ch = st.number_input(
+                                "⏱️ Carga Horária (horas) *", 
+                                min_value=0, 
+                                max_value=200,
+                                value=int(current_ch) if current_ch else 0,
+                                help="Carga horária total do treinamento"
+                            )
+                            
+                            st.markdown("#### ⏰ Vencimento")
+                            
+                            vencimento_calculado = employee_manager.calcular_vencimento_treinamento(
+                                edited_data, edited_norma, edited_modulo, edited_tipo
+                            )
+                            
+                            if vencimento_calculado:
+                                st.success(f"✅ Vencimento calculado automaticamente: **{vencimento_calculado.strftime('%d/%m/%Y')}**")
+                                edited_vencimento = st.date_input(
+                                    "Data de Vencimento * (editável)",
+                                    value=vencimento_calculado,
+                                    help="Vencimento calculado pela norma - você pode ajustar se necessário"
+                                )
                             else:
-                                st.warning("⚠️ Nenhum item de EPI foi identificado no PDF.")
-                    else:
-                        st.error("❌ Não foi possível extrair informações da Ficha de EPI.")
+                                st.warning("⚠️ Não foi possível calcular o vencimento automaticamente")
+                                edited_vencimento = st.date_input(
+                                    "Data de Vencimento *",
+                                    value=edited_data + pd.DateOffset(years=2),
+                                    help="Defina manualmente a data de vencimento"
+                                )
+                            
+                            observacoes_training = st.text_area(
+                                "📝 Observações (opcional)",
+                                placeholder="Ex: Treinamento realizado in company, instrutor específico, etc.",
+                                help="Campo livre para anotações sobre este treinamento"
+                            )
+
+                            display_audit_results(training_info.get('audit_result'))
+
+                            col_confirm, col_cancel = st.columns([3, 1])
+                            
+                            with col_confirm:
+                                confirm_button = st.form_submit_button(
+                                    "💾 Confirmar e Salvar Treinamento", 
+                                    type="primary",
+                                    use_container_width=True
+                                )
+                            
+                            with col_cancel:
+                                cancel_button = st.form_submit_button(
+                                    "❌ Cancelar",
+                                    use_container_width=True
+                                )
+                            
+                            if cancel_button:
+                                for key in list(st.session_state.keys()):
+                                    if key.startswith('Treinamento_'):
+                                        del st.session_state[key]
+                                st.rerun()
+                            
+                            if confirm_button:
+                                if edited_vencimento <= edited_data:
+                                    st.error("❌ A data de vencimento deve ser posterior à data de realização!")
+                                    st.stop()
+                                
+                                if edited_ch <= 0:
+                                    st.error("❌ A carga horária deve ser maior que zero!")
+                                    st.stop()
+                                
+                                with st.spinner("💾 Salvando treinamento..."):
+                                    anexo = st.session_state.Treinamento_anexo_para_salvar
+                                    arquivo_hash = st.session_state.get('Treinamento_hash_para_salvar')
+                                    emp_id = st.session_state.Treinamento_funcionario_para_salvar
+                                    emp_name = employee_manager.get_employee_name(emp_id)
+                                    nome_arquivo = f"TRAINING_{emp_name.replace(' ', '_')}_{edited_norma.replace('-', '')}_{edited_data.strftime('%Y%m%d')}.pdf"
+                                    
+                                    arquivo_id = employee_manager.upload_documento_e_obter_link(anexo, nome_arquivo)
+                                    
+                                    if arquivo_id:
+                                        training_data = {
+                                            'funcionario_id': emp_id, 
+                                            'anexo': arquivo_id, 
+                                            'arquivo_hash': arquivo_hash,
+                                            'data': edited_data, 
+                                            'norma': edited_norma, 
+                                            'tipo_treinamento': edited_tipo,
+                                            'carga_horaria': edited_ch, 
+                                            'vencimento': edited_vencimento, 
+                                            'modulo': edited_modulo
+                                        }
+                                        
+                                        training_id = employee_manager.add_training(training_data)
+                                        
+                                        if training_id:
+                                            st.success("✅ Treinamento salvo com sucesso!")
+                                            
+                                            audit_result = training_info.get('audit_result')
+                                            if audit_result and 'não conforme' in audit_result.get('summary', '').lower():
+                                                nr_analyzer = st.session_state.get('nr_analyzer')
+                                                if nr_analyzer:
+                                                    items_added = nr_analyzer.create_action_plan_from_audit(
+                                                        audit_result, selected_company, training_id, employee_id=emp_id
+                                                    )
+                                                    if items_added > 0:
+                                                        st.info(f"📋 {items_added} não conformidade(s) adicionada(s) ao Plano de Ação")
+                                            
+                                            for key in list(st.session_state.keys()):
+                                                if key.startswith('Treinamento_'):
+                                                    del st.session_state[key]
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ Falha ao salvar o treinamento no banco de dados.")
+                                    else:
+                                        st.error("❌ Falha ao fazer upload do arquivo.")
+                
+                # --- MODO MANUAL ---
+                else:
+                    st.markdown("### ✍️ Cadastro Manual de Treinamento")
+                    with st.form("manual_training_form"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            manual_data = st.date_input("📅 Data de Realização *", value=date.today(), max_value=date.today())
+                        with col2:
+                            norma_options = sorted(list(employee_manager.nr_config.keys()) + ['NR-20'])
+                            manual_norma = st.selectbox("📋 Norma *", options=norma_options)
+                        
+                        col3, col4 = st.columns(2)
+                        with col3:
+                            if manual_norma == "NR-20":
+                                manual_modulo = st.selectbox("🎯 Módulo NR-20 *", ['Básico', 'Intermediário', 'Avançado I', 'Avançado II'])
+                            elif manual_norma == "NR-33":
+                                manual_modulo = st.selectbox("🎯 Módulo NR-33 *", ['Trabalhador Autorizado', 'Supervisor'])
+                            else:
+                                manual_modulo = st.text_input("🎯 Módulo (opcional)")
+                        with col4:
+                            manual_tipo = st.selectbox("🔄 Tipo *", ["formação", "reciclagem"])
+                        
+                        manual_ch = st.number_input("⏱️ Carga Horária (horas) *", min_value=1, max_value=200, value=8)
+                        
+                        st.markdown("#### ⏰ Vencimento")
+                        vencimento_manual_calc = employee_manager.calcular_vencimento_treinamento(manual_data, manual_norma, manual_modulo, manual_tipo)
+                        manual_vencimento = st.date_input("Data de Vencimento *", value=vencimento_manual_calc if vencimento_manual_calc else manual_data + pd.DateOffset(years=1))
+                        
+                        manual_training_arquivo = st.file_uploader("📎 Anexar Certificado em PDF *", type=['pdf'], key="manual_training_file")
+                        
+                        col_submit, col_cancel = st.columns([3, 1])
+                        
+                        with col_submit:
+                            submit_manual_training = st.form_submit_button("💾 Salvar Treinamento", type="primary", use_container_width=True)
+                        
+                        with col_cancel:
+                            cancel_manual_training = st.form_submit_button("❌ Cancelar", use_container_width=True)
+                        
+                        if cancel_manual_training:
+                            st.rerun()
+                        
+                        if submit_manual_training:
+                            if not manual_training_arquivo:
+                                st.error("❌ É obrigatório anexar o certificado em PDF!")
+                                st.stop()
+                            if manual_vencimento <= manual_data:
+                                st.error("❌ O vencimento deve ser após a data de realização!")
+                                st.stop()
+                            
+                            with st.spinner("💾 Salvando..."):
+                                from operations.file_hash import calcular_hash_arquivo
+                                arquivo_hash = calcular_hash_arquivo(manual_training_arquivo)
+                                emp_name = employee_manager.get_employee_name(selected_employee_training)
+                                nome_arquivo = f"TRAINING_{emp_name.replace(' ', '_')}_{manual_norma.replace('-', '')}_{manual_data.strftime('%Y%m%d')}.pdf"
+                                arquivo_id = employee_manager.upload_documento_e_obter_link(manual_training_arquivo, nome_arquivo)
+                                
+                                if arquivo_id:
+                                    training_data = {
+                                        'funcionario_id': selected_employee_training,
+                                        'anexo': arquivo_id, 
+                                        'arquivo_hash': arquivo_hash, 
+                                        'data': manual_data,
+                                        'norma': manual_norma, 
+                                        'tipo_treinamento': manual_tipo, 
+                                        'carga_horaria': manual_ch,
+                                        'vencimento': manual_vencimento, 
+                                        'modulo': manual_modulo
+                                    }
+                                    if employee_manager.add_training(training_data):
+                                        st.success("✅ Treinamento salvo com sucesso!")
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Falha ao salvar no banco de dados.")
+                                else:
+                                    st.error("❌ Falha no upload do arquivo.")
             else:
                 st.warning("⚠️ Cadastre funcionários nesta empresa primeiro.")
-        else:
-            st.info("💡 A análise automática de Fichas de EPI é um recurso do plano **Premium IA**.")
-            st.warning("Para cadastrar EPIs, por favor, contate o administrador ou faça upgrade do seu plano.")
 
+    # =============================================
+    # ABA: ADICIONAR FICHA DE EPI
     # ============================================
-    # ABA: GERENCIAR REGISTROS (código inalterado)
+    with tab_add_epi:
+        if not selected_company:
+            st.info("👈 Selecione uma empresa na aba 'Situação Geral' primeiro.")
+        elif check_permission(level='editor'):
+            st.subheader("🦺 Adicionar Ficha de EPI")
+            
+            if check_feature_permission('premium_ia'):
+                current_employees = employee_manager.get_employees_by_company(selected_company)
+                
+                if not current_employees.empty:
+                    st.selectbox(
+                        "👤 Funcionário", 
+                        current_employees['id'].tolist(), 
+                        format_func=employee_manager.get_employee_name, 
+                        key="epi_employee_add"
+                    )
+                    st.file_uploader(
+                        "📎 Anexar Ficha de EPI (PDF)", 
+                        type=['pdf'], 
+                        key="epi_uploader_tab", 
+                        on_change=process_epi_pdf,
+                        help="Faça upload da ficha de controle de entrega de EPI em PDF"
+                    )
+                    
+                    if st.session_state.get('epi_info_para_salvar'):
+                        epi_info = st.session_state['epi_info_para_salvar']
+                        
+                        if epi_info:
+                            with st.form("confirm_epi_form"):
+                                st.markdown("### ✏️ Confirme as Informações Extraídas")
+                                
+                                nome_funcionario = epi_info.get('nome_funcionario', 'N/A')
+                                st.info(f"👤 **Funcionário identificado no PDF:** {nome_funcionario}")
+                                
+                                itens_epi = epi_info.get('itens_epi', [])
+                                
+                                if itens_epi:
+                                    st.markdown(f"**Total de itens encontrados:** {len(itens_epi)}")
+                                    epi_df = pd.DataFrame(itens_epi)
+                                    st.dataframe(epi_df, use_container_width=True, hide_index=True)
+                                    
+                                    if st.form_submit_button("💾 Confirmar e Salvar Ficha de EPI", type="primary"):
+                                        with st.spinner("💾 Salvando..."):
+                                            anexo = st.session_state.epi_anexo_para_salvar
+                                            arquivo_hash = st.session_state.get('epi_hash_para_salvar')
+                                            emp_id = st.session_state.epi_funcionario_para_salvar
+                                            emp_name = employee_manager.get_employee_name(emp_id)
+                                            nome_arquivo = f"EPI_{emp_name.replace(' ', '_')}_{date.today().strftime('%Y%m%d')}.pdf"
+                                            
+                                            arquivo_id = employee_manager.upload_documento_e_obter_link(anexo, nome_arquivo)
+                                            
+                                            if arquivo_id:
+                                                saved_ids = epi_manager.add_epi_records(
+                                                    emp_id, arquivo_id, itens_epi, arquivo_hash
+                                                )
+                                                
+                                                if saved_ids:
+                                                    st.success(f"✅ Ficha de EPI salva com sucesso! {len(saved_ids)} item(ns) cadastrado(s).")
+                                                    
+                                                    for key in list(st.session_state.keys()):
+                                                        if key.startswith('epi_'):
+                                                            del st.session_state[key]
+                                                    st.rerun()
+                                                else:
+                                                    st.error("❌ Falha ao salvar os itens de EPI.")
+                                else:
+                                    st.warning("⚠️ Nenhum item de EPI foi identificado no PDF.")
+                        else:
+                            st.error("❌ Não foi possível extrair informações da Ficha de EPI.")
+                else:
+                    st.warning("⚠️ Cadastre funcionários nesta empresa primeiro.")
+            else:
+                st.info("💡 A análise automática de Fichas de EPI é um recurso do plano **Premium IA**.")
+                st.warning("Para cadastrar EPIs, por favor, contate o administrador ou faça upgrade do seu plano.")
+
+    # =============================================
+    # ABA: GERENCIAR REGISTROS
     # ============================================
     with tab_manage:
         if not selected_company:
-            st.info(" Selecione uma empresa na aba 'Situação Geral' primeiro.")
+            st.info("👈 Selecione uma empresa na aba 'Situação Geral' primeiro.")
         elif check_permission(level='editor'):
             st.header("⚙️ Gerenciar Registros Existentes")
             
-            manage_tabs = st.tabs([" ASOs", " Treinamentos", " Docs. Empresa", " Fichas de EPI"])
+            manage_tabs = st.tabs(["🩺 ASOs", "🎓 Treinamentos", "📄 Docs. Empresa", "🦺 Fichas de EPI"])
             
             # === GERENCIAR ASOs ===
             with manage_tabs[0]:
-                st.subheader(" ASOs Cadastrados")
+                st.subheader("🩺 ASOs Cadastrados")
                 
                 employees = employee_manager.get_employees_by_company(selected_company)
                 if employees.empty:
@@ -1477,7 +1486,7 @@ with tab_add_epi:
                         )
                         
                         st.markdown("---")
-                        st.subheader("️ Excluir ASO")
+                        st.subheader("🗑️ Excluir ASO")
                         
                         aso_to_delete = st.selectbox(
                             "Selecione o ASO para excluir:",
@@ -1486,7 +1495,7 @@ with tab_add_epi:
                             key="aso_delete_select"
                         )
                         
-                        if st.button("️ Excluir ASO Selecionado", type="secondary"):
+                        if st.button("🗑️ Excluir ASO Selecionado", type="secondary"):
                             aso_row = asos_df[asos_df['id'] == aso_to_delete].iloc[0]
                             st.session_state.show_delete_dialog = True
                             st.session_state.item_to_delete = {
@@ -1500,7 +1509,7 @@ with tab_add_epi:
             
             # === GERENCIAR TREINAMENTOS ===
             with manage_tabs[1]:
-                st.subheader(" Treinamentos Cadastrados")
+                st.subheader("🎓 Treinamentos Cadastrados")
                 
                 employees = employee_manager.get_employees_by_company(selected_company)
                 if employees.empty:
@@ -1536,7 +1545,7 @@ with tab_add_epi:
                         )
                         
                         st.markdown("---")
-                        st.subheader("️ Excluir Treinamento")
+                        st.subheader("🗑️ Excluir Treinamento")
                         
                         training_to_delete = st.selectbox(
                             "Selecione o Treinamento para excluir:",
@@ -1545,7 +1554,7 @@ with tab_add_epi:
                             key="training_delete_select"
                         )
                         
-                        if st.button("️ Excluir Treinamento Selecionado", type="secondary"):
+                        if st.button("🗑️ Excluir Treinamento Selecionado", type="secondary"):
                             training_row = trainings_df[trainings_df['id'] == training_to_delete].iloc[0]
                             st.session_state.show_delete_dialog = True
                             st.session_state.item_to_delete = {
@@ -1559,7 +1568,7 @@ with tab_add_epi:
             
             # === GERENCIAR DOCUMENTOS DA EMPRESA ===
             with manage_tabs[2]:
-                st.subheader(" Documentos da Empresa")
+                st.subheader("📄 Documentos da Empresa")
                 
                 company_docs = docs_manager.get_docs_by_company(selected_company)
                 
@@ -1578,7 +1587,7 @@ with tab_add_epi:
                     )
                     
                     st.markdown("---")
-                    st.subheader("️ Excluir Documento")
+                    st.subheader("🗑️ Excluir Documento")
                     
                     doc_to_delete = st.selectbox(
                         "Selecione o Documento para excluir:",
@@ -1587,7 +1596,7 @@ with tab_add_epi:
                         key="doc_delete_select"
                     )
                     
-                    if st.button("️ Excluir Documento Selecionado", type="secondary"):
+                    if st.button("🗑️ Excluir Documento Selecionado", type="secondary"):
                         doc_row = company_docs[company_docs['id'] == doc_to_delete].iloc[0]
                         st.session_state.show_delete_dialog = True
                         st.session_state.item_to_delete = {
@@ -1599,7 +1608,7 @@ with tab_add_epi:
             
             # === GERENCIAR FICHAS DE EPI ===
             with manage_tabs[3]:
-                st.subheader(" Fichas de EPI Cadastradas")
+                st.subheader("🦺 Fichas de EPI Cadastradas")
                 
                 employees = employee_manager.get_employees_by_company(selected_company)
                 if employees.empty:
@@ -1633,7 +1642,7 @@ with tab_add_epi:
                         )
                         
                         st.markdown("---")
-                        st.subheader("️ Excluir Item de EPI")
+                        st.subheader("🗑️ Excluir Item de EPI")
                         
                         epi_to_delete = st.selectbox(
                             "Selecione o Item de EPI para excluir:",
@@ -1642,7 +1651,7 @@ with tab_add_epi:
                             key="epi_delete_select"
                         )
                         
-                        if st.button("️ Excluir Item de EPI Selecionado", type="secondary"):
+                        if st.button("🗑️ Excluir Item de EPI Selecionado", type="secondary"):
                             epi_row = epis_df[epis_df['id'] == epi_to_delete].iloc[0]
                             st.session_state.show_delete_dialog = True
                             st.session_state.item_to_delete = {
