@@ -17,6 +17,7 @@ import logging
 from typing import Optional, Union
 from operations.cached_loaders import load_all_unit_data
 from operations.utils import format_date_safe
+from operations.nr_rules_manager import NRRulesManager  # <-- NOVA IMPORTAÇÃO
 
 def similar(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
@@ -38,27 +39,10 @@ class EmployeeManager:
         self.folder_id = folder_id
         self._pdf_analyzer = None
         self.data_loaded_successfully = False
-        
-        self.nr20_config = {
-            'Básico': {'reciclagem_anos': 3, 'reciclagem_horas': 4, 'inicial_horas': 8},
-            'Intermediário': {'reciclagem_anos': 2, 'reciclagem_horas': 4, 'inicial_horas': 16},
-            'Avançado I': {'reciclagem_anos': 2, 'reciclagem_horas': 4, 'inicial_horas': 20},
-            'Avançado II': {'reciclagem_anos': 1, 'reciclagem_horas': 4, 'inicial_horas': 32}
-        }
-        self.nr_config = {
-            'NR-35': {'inicial_horas': 8, 'reciclagem_horas': 8, 'reciclagem_anos': 2},
-            'NR-10': {'inicial_horas': 40, 'reciclagem_horas': 40, 'reciclagem_anos': 2},
-            'NR-18': {'inicial_horas': 8, 'reciclagem_horas': 8, 'reciclagem_anos': 1},
-            'NR-06': {'inicial_horas': 3, 'reciclagem_horas': 3, 'reciclagem_anos': 10},
-            'NR-12': {'inicial_horas': 8, 'reciclagem_horas': 8, 'reciclagem_anos': 5},
-            'NR-34': {'inicial_horas': 8, 'reciclagem_horas': 8, 'reciclagem_anos': 1},
-            'NR-33': {'reciclagem_anos': 1},
-            'BRIGADA DE INCÊNDIO': {'reciclagem_anos': 1},
-            'NR-11': {'inicial_horas': 16, 'reciclagem_anos': 3, 'reciclagem_horas': 16}, 
-            'NBR-16710 RESGATE TÉCNICO': {'reciclagem_anos': 2},
-            'PERMISSÃO DE TRABALHO (PT)': {'reciclagem_anos': 1}
-        }
-        
+
+        # ✅ PASSO 1: INICIALIZAR O NOVO MANAGER
+        self.nr_rules_manager = NRRulesManager(self.unit_id)
+
         self.load_data()
 
     @property
@@ -94,14 +78,14 @@ class EmployeeManager:
                 logger.error("load_all_unit_data retornou dados inválidos")
                 self.data_loaded_successfully = False
                 return
-            
+
             required_keys = ['companies', 'employees', 'asos', 'trainings']
             missing_keys = [key for key in required_keys if key not in data]
             if missing_keys:
                 logger.error(f"Chaves faltando no retorno: {missing_keys}")
                 self.data_loaded_successfully = False
                 return
-            
+
             self.companies_df = data['companies'] if data.get('companies') is not None else pd.DataFrame()
             self.employees_df = data['employees'] if data.get('employees') is not None else pd.DataFrame()
             self.aso_df = data['asos'] if data.get('asos') is not None else pd.DataFrame()
@@ -120,22 +104,22 @@ class EmployeeManager:
                     for col in cols:
                         if col in df.columns:
                             df[col] = df[col].astype(str)
-            
+
             if not self.companies_df.empty:
                 self.companies_df.set_index('id', inplace=True, drop=False)
-            
+
             if not self.employees_df.empty:
                 self.employees_df.set_index('id', inplace=True, drop=False)
                 self._employees_by_company = self.employees_df.groupby('empresa_id')
-            
+
             if not self.aso_df.empty:
                 self._asos_by_employee = self.aso_df.groupby('funcionario_id')
-            
+
             if not self.training_df.empty:
                 self._trainings_by_employee = self.training_df.groupby('funcionario_id')
-            
+
             self.data_loaded_successfully = True
-            
+
         except Exception as e:
             logger.error(f"Erro no load_data: {e}", exc_info=True)
             self.data_loaded_successfully = False
@@ -275,15 +259,8 @@ class EmployeeManager:
                 modulo = 'SEP'
             elif norma_padronizada == 'NR-10' and modulo in ['N/A', '', 'nan']:
                 modulo = 'Básico'
-            
-            if norma_padronizada == "NR-20":
-                modulos_validos = ['Básico', 'Intermediário', 'Avançado I', 'Avançado II']
-                if modulo not in modulos_validos:
-                    key_ch = 'inicial_horas' if tipo_treinamento == 'formação' else 'reciclagem_horas'
-                    for mod, config in self.nr20_config.items():
-                        if carga_horaria == config.get(key_ch):
-                            modulo = mod
-                            break
+
+            # ✅ REMOVIDO: Lógica que dependia de self.nr20_config - será tratada pelo NRRulesManager nas validações
             
             return {
                 'data': data_realizacao,
@@ -448,7 +425,7 @@ class EmployeeManager:
     def get_all_trainings_by_employee(self, employee_id):
         try:
             if not hasattr(self, '_trainings_by_employee'):
-                logger.debug(f"Atributo '_trainings_by_employee' não encontrado. Provavelmente não há treinamentos nesta unidade.")
+                logger.debug(f"Atributo '_trainings_by_employee' não encontrado.")
                 return pd.DataFrame()
 
             training_docs = self._trainings_by_employee.get_group(str(employee_id)).copy()
@@ -459,6 +436,7 @@ class EmployeeManager:
             if training_docs.empty: 
                 return pd.DataFrame()
 
+            # Normalização de colunas
             for col in ['norma', 'modulo', 'tipo_treinamento']:
                 if col not in training_docs.columns: 
                     training_docs[col] = 'N/A'
@@ -467,36 +445,70 @@ class EmployeeManager:
             training_docs['norma_normalizada'] = training_docs['norma'].str.strip().str.upper()
             training_docs['modulo_normalizado'] = training_docs['modulo'].str.strip().str.title()
             
+            # ✅ FUNÇÃO MELHORADA
             def normalizar_modulo_especial(row):
                 norma = row['norma_normalizada']
                 modulo = row['modulo_normalizado']
                 
+                # Dicionário de mapeamentos
+                normalizacao_map = {
+                    'NR-10': {
+                        'sep_keywords': ['SEP'],
+                        'sep_value': 'SEP',
+                        'default': 'Básico'
+                    },
+                    'NR-33': {
+                        'supervisor': ['SUPERVISOR'],
+                        'trabalhador': ['TRABALHADOR', 'AUTORIZADO'],
+                        'values': {
+                            'supervisor': 'Supervisor',
+                            'trabalhador': 'Trabalhador Autorizado'
+                        }
+                    },
+                    'NR-20': {
+                        'validos': ['Básico', 'Intermediário', 'Avançado I', 'Avançado II']
+                    },
+                    'PERMISSÃO': {
+                        'emitente': ['EMITENTE'],
+                        'requisitante': ['REQUISITANTE'],
+                        'values': {
+                            'emitente': 'Emitente',
+                            'requisitante': 'Requisitante'
+                        }
+                    }
+                }
+                
+                # NR-10
                 if 'NR-10' in norma:
-                    if 'SEP' in norma or 'SEP' in modulo.upper():
-                        return 'SEP'
+                    if any(kw in norma or kw in modulo.upper() for kw in normalizacao_map['NR-10']['sep_keywords']):
+                        return normalizacao_map['NR-10']['sep_value']
                     elif modulo in ['N/A', 'Nan', '']:
-                        return 'Básico'
+                        return normalizacao_map['NR-10']['default']
                     return modulo
                 
+                # NR-33
                 if 'NR-33' in norma:
-                    if 'SUPERVISOR' in modulo.upper():
-                        return 'Supervisor'
-                    elif 'TRABALHADOR' in modulo.upper() or 'AUTORIZADO' in modulo.upper():
-                        return 'Trabalhador Autorizado'
+                    modulo_upper = modulo.upper()
+                    if any(kw in modulo_upper for kw in normalizacao_map['NR-33']['supervisor']):
+                        return normalizacao_map['NR-33']['values']['supervisor']
+                    elif any(kw in modulo_upper for kw in normalizacao_map['NR-33']['trabalhador']):
+                        return normalizacao_map['NR-33']['values']['trabalhador']
                     return modulo
                 
+                # NR-20
                 if 'NR-20' in norma:
-                    modulos_validos = ['Básico', 'Intermediário', 'Avançado I', 'Avançado II']
-                    for valido in modulos_validos:
+                    for valido in normalizacao_map['NR-20']['validos']:
                         if valido.upper() in modulo.upper():
                             return valido
                     return modulo
                 
+                # Permissão de Trabalho
                 if 'PERMISSÃO' in norma or 'PT' in norma:
-                    if 'EMITENTE' in modulo.upper():
-                        return 'Emitente'
-                    elif 'REQUISITANTE' in modulo.upper():
-                        return 'Requisitante'
+                    modulo_upper = modulo.upper()
+                    if any(kw in modulo_upper for kw in normalizacao_map['PERMISSÃO']['emitente']):
+                        return normalizacao_map['PERMISSÃO']['values']['emitente']
+                    elif any(kw in modulo_upper for kw in normalizacao_map['PERMISSÃO']['requisitante']):
+                        return normalizacao_map['PERMISSÃO']['values']['requisitante']
                     return modulo
                 
                 return modulo
@@ -509,13 +521,20 @@ class EmployeeManager:
                 logger.debug(f"Nenhum treinamento com data válida para employee_id {employee_id}")
                 return pd.DataFrame()
 
+            # ✅ CORREÇÃO: Agrupa corretamente por norma E módulo
             latest_trainings = training_docs.sort_values(
                 'data_dt', ascending=False
             ).groupby(['norma_normalizada', 'modulo_final'], dropna=False).head(1)
             
-            latest_trainings = latest_trainings.drop(columns=['norma_normalizada', 'modulo_normalizado', 'modulo_final', 'data_dt'])
+            latest_trainings = latest_trainings.drop(
+                columns=['norma_normalizada', 'modulo_normalizado', 'modulo_final', 'data_dt']
+            )
             return latest_trainings
+            
         except KeyError:
+            return pd.DataFrame()
+        except Exception as e:
+            logger.error(f"Erro ao buscar treinamentos: {e}", exc_info=True)
             return pd.DataFrame()
 
     def get_company_name(self, company_id):
@@ -592,148 +611,176 @@ class EmployeeManager:
             logger.error(f"Erro crítico na validação: {e}", exc_info=True)
             return False, f"❌ Erro na validação: {str(e)}"
 
-    def _padronizar_norma(self, norma):
-        if not norma: return "N/A"
+    def _padronizar_norma(self, norma: str) -> str:
+        """
+        ✅ FUNÇÃO ATUALIZADA: Padroniza o nome da norma de forma contextual.
+
+        A ordem das verificações é crucial para não perder informações importantes
+        como "SEP" em "NR-10 SEP".
+        """
+        if not norma or not isinstance(norma, str):
+            return "N/A"
+
         norma_upper = str(norma).strip().upper()
-        if any(term in norma_upper for term in ["BRIGADA", "INCÊNDIO", "IT-17", "NR-23"]): return "BRIGADA DE INCÊNDIO"
-        if "16710" in norma_upper or "RESGATE TÉCNICO" in norma_upper: return "NBR-16710 RESGATE TÉCNICO"
-        if "PERMISSÃO" in norma_upper or re.search(r'\bPT\b', norma_upper): return "PERMISSÃO DE TRABALHO (PT)"
+
+        # 1. Primeiro, verifica por termos compostos e específicos.
+        if "10" in norma_upper and "SEP" in norma_upper:
+            return "NR-10 SEP"
+        if any(term in norma_upper for term in ["BRIGADA", "INCÊNDIO", "IT-17", "NR-23"]):
+            return "BRIGADA DE INCÊNDIO"
+        if "16710" in norma_upper or "RESGATE TÉCNICO" in norma_upper:
+            return "NBR-16710 RESGATE TÉCNICO"
+        if "PERMISSÃO" in norma_upper or re.search(r'\bPT\b', norma_upper):
+            return "PERMISSÃO DE TRABALHO (PT)"
+
+        # 2. Se não for um caso especial, busca pelo padrão genérico NR-XX.
+        #    Isso garante que "NR-10 Básico" ou "NR 10" se tornem "NR-10".
         match = re.search(r'NR\s?-?(\d+)', norma_upper)
-        if match: return f"NR-{int(match.group(1)):02d}"
+        if match:
+            # Formata o número com dois dígitos, ex: NR-05, NR-10
+            return f"NR-{int(match.group(1)):02d}"
+
+        # 3. Se nenhuma regra for aplicada, retorna o texto original em maiúsculas.
         return norma_upper
 
     def calcular_vencimento_treinamento(self, data, norma, modulo=None, tipo_treinamento='formação'):
+        """
+        ✅ REFATORADO: Agora usa o NRRulesManager para buscar as regras dinamicamente do banco de dados.
+        """
         if not isinstance(data, (date, datetime)): return None
         norma_padronizada = self._padronizar_norma(norma)
-        anos_validade = None
-        
-        if norma_padronizada == "NR-20" and modulo:
-            config = self.nr20_config.get(modulo.strip().title())
-            if config: anos_validade = config.get('reciclagem_anos')
-        else:
-            config = self.nr_config.get(norma_padronizada)
-            if config: anos_validade = config.get('reciclagem_anos')
-        
-        if anos_validade is not None:
-            return data + relativedelta(years=int(anos_validade))
-        st.warning(f"Regras de vencimento não encontradas para '{norma_padronizada}'.")
+
+        # Busca a regra específica no banco de dados
+        rule = self.nr_rules_manager.find_training_rule(norma_nome=norma_padronizada, modulo_nome=modulo)
+
+        if rule is None:
+            st.warning(f"Regras de vencimento não encontradas no banco de dados para '{norma_padronizada}'.")
+            return None
+
+        # Verifica se há período de reciclagem definido
+        if pd.notna(rule.get('reciclagem_anos')):
+            anos_validade = rule['reciclagem_anos']
+            if anos_validade == 0.5:  # Tratamento especial para 6 meses (NR 17)
+                return data + relativedelta(months=6)
+            elif anos_validade > 0:
+                return data + relativedelta(years=int(anos_validade))
+
+        # Se não há reciclagem_anos, o treinamento não tem vencimento fixo
+        st.warning(f"Treinamento '{norma_padronizada}' não possui regra de vencimento em anos definida no sistema.")
         return None
 
     def delete_aso(self, aso_id: str, file_url: str):
-        aso_info = self.aso_df[self.aso_df['id'] == aso_id]
+        """
+        ✅ CORREÇÃO (#1): Deleta um ASO e seu arquivo associado na ordem correta.
+        Primeiro deleta do banco de dados, depois do storage para manter integridade.
+        """
+        aso_id_str = str(aso_id)
+        
+        aso_info = self.aso_df[self.aso_df['id'] == aso_id_str]
         if not aso_info.empty:
             details = {
-                "deleted_item_id": aso_id,
+                "deleted_item_id": aso_id_str,
                 "item_type": "ASO",
-                "employee_id": aso_info.iloc[0].get('funcionario_id'),
+                "employee_id": str(aso_info.iloc[0].get('funcionario_id')),
                 "aso_type": aso_info.iloc[0].get('tipo_aso'),
                 "aso_date": str(aso_info.iloc[0].get('data_aso')),
                 "file_url": file_url
             }
             log_action("DELETE_ASO", details)
 
+        # 1. Deleta do banco de dados PRIMEIRO
+        db_deleted = self.supabase_ops.delete_row("asos", aso_id_str)
+        
+        if not db_deleted:
+            logger.error(f"Falha ao deletar ASO {aso_id_str} do banco.")
+            return False
+
+        # 2. Se o banco foi deletado com sucesso, tenta deletar o arquivo do storage
         if file_url and pd.notna(file_url):
             try:
                 from managers.supabase_storage import SupabaseStorageManager
                 storage_manager = SupabaseStorageManager(self.unit_id)
                 storage_manager.delete_file_by_url(file_url)
             except Exception as e:
-                logger.error(f"Erro ao deletar arquivo: {e}")
+                # Loga como aviso, pois o registro do DB já foi removido (estado consistente)
+                logger.warning(f"Arquivo órfão no storage: {file_url}. Erro: {e}")
         
-        if self.supabase_ops.delete_row("asos", aso_id):
-            st.cache_data.clear()
-            self.load_data()
-            return True
-        return False
+        st.cache_data.clear()
+        self.load_data()
+        return True
 
     def delete_training(self, training_id: str, file_url: str):
-        training_info = self.training_df[self.training_df['id'] == training_id]
+        """
+        ✅ CORREÇÃO (#1): Deleta um treinamento e seu arquivo associado na ordem correta.
+        Primeiro deleta do banco de dados, depois do storage para manter integridade.
+        """
+        training_id_str = str(training_id)
+        
+        training_info = self.training_df[self.training_df['id'] == training_id_str]
         if not training_info.empty:
             details = {
-                "deleted_item_id": training_id,
+                "deleted_item_id": training_id_str,
                 "item_type": "Treinamento",
-                "employee_id": training_info.iloc[0].get('funcionario_id'),
+                "employee_id": str(training_info.iloc[0].get('funcionario_id')),
                 "norma": training_info.iloc[0].get('norma'),
                 "training_date": str(training_info.iloc[0].get('data')),
                 "file_url": file_url
             }
             log_action("DELETE_TRAINING", details)
+            
+        # 1. Deleta do banco de dados PRIMEIRO
+        db_deleted = self.supabase_ops.delete_row("treinamentos", training_id_str)
 
+        if not db_deleted:
+            logger.error(f"Falha ao deletar treinamento {training_id_str} do banco.")
+            return False
+            
+        # 2. Se o banco foi deletado com sucesso, tenta deletar o arquivo do storage
         if file_url and pd.notna(file_url):
             try:
                 from managers.supabase_storage import SupabaseStorageManager
                 storage_manager = SupabaseStorageManager(self.unit_id)
                 storage_manager.delete_file_by_url(file_url)
             except Exception as e:
-                logger.error(f"Erro ao deletar arquivo: {e}")
+                # Loga como aviso, pois o registro do DB já foi removido (estado consistente)
+                logger.warning(f"Arquivo órfão no storage: {file_url}. Erro: {e}")
 
-        if self.supabase_ops.delete_row("treinamentos", training_id):
-            st.cache_data.clear()
-            self.load_data()
-            return True
-        return False
+        st.cache_data.clear()
+        self.load_data()
+        return True
 
     def validar_treinamento(self, norma, modulo, tipo_treinamento, carga_horaria):
+        """
+        ✅ REFATORADO: Agora usa o NRRulesManager para buscar as regras dinamicamente do banco de dados.
+        """
         norma_padronizada = self._padronizar_norma(norma)
         tipo_treinamento = str(tipo_treinamento).lower()
 
-        if norma_padronizada in self.nr_config:
-            config = self.nr_config[norma_padronizada]
-            if tipo_treinamento == 'formação':
-                if 'inicial_horas' in config and carga_horaria < config['inicial_horas']:
-                    return False, f"Carga horária para formação ({norma_padronizada}) deve ser de {config['inicial_horas']}h, mas foi de {carga_horaria}h."
-            elif tipo_treinamento == 'reciclagem':
-                if 'reciclagem_horas' in config and carga_horaria < config['reciclagem_horas']:
-                    return False, f"Carga horária para reciclagem ({norma_padronizada}) deve ser de {config['reciclagem_horas']}h, mas foi de {carga_horaria}h."
+        # 1. Busca a regra específica no banco de dados
+        rule = self.nr_rules_manager.find_training_rule(norma_nome=norma_padronizada, modulo_nome=modulo)
 
-        if norma_padronizada == "NR-33":
-            modulo_normalizado = ""
-            if modulo and "supervisor" in modulo.lower():
-                modulo_normalizado = "supervisor"
-            elif modulo and ("trabalhador" in modulo.lower() or "autorizado" in modulo.lower()):
-                modulo_normalizado = "trabalhador"
-            
-            if tipo_treinamento == 'formação':
-                if modulo_normalizado == "supervisor" and carga_horaria < 40:
-                    return False, f"Carga horária para formação de Supervisor (NR-33) deve ser de 40h, mas foi de {carga_horaria}h."
-                if modulo_normalizado == "trabalhador" and carga_horaria < 16:
-                    return False, f"Carga horária para formação de Trabalhador Autorizado (NR-33) deve ser de 16h, mas foi de {carga_horaria}h."
-            elif tipo_treinamento == 'reciclagem' and carga_horaria < 8:
-                return False, f"Carga horária para reciclagem (NR-33) deve ser de 8h, mas foi de {carga_horaria}h."
-        
-        elif norma_padronizada == "PERMISSÃO DE TRABALHO (PT)":
-            modulo_lower = str(modulo).lower()
-            if "emitente" in modulo_lower:
-                if tipo_treinamento == 'formação' and carga_horaria < 16:
-                    return False, f"Carga horária para formação de Emitente de PT deve ser de 16h, mas foi de {carga_horaria}h."
-                elif tipo_treinamento == 'reciclagem' and carga_horaria < 4:
-                    return False, f"Carga horária para reciclagem de Emitente de PT deve ser de 4h, mas foi de {carga_horaria}h."
-            elif "requisitante" in modulo_lower:
-                if tipo_treinamento == 'formação' and carga_horaria < 8:
-                    return False, f"Carga horária para formação de Requisitante de PT deve ser de 8h, mas foi de {carga_horaria}h."
-                elif tipo_treinamento == 'reciclagem' and carga_horaria < 4:
-                    return False, f"Carga horária para reciclagem de Requisitante de PT deve ser de 4h, mas foi de {carga_horaria}h."
-          
-        elif norma_padronizada == "BRIGADA DE INCÊNDIO":
-            is_avancado = "avançado" in str(modulo).lower()
-            if is_avancado:
-                if tipo_treinamento == 'formação' and carga_horaria < 24:
-                    return False, f"Carga horária para formação de Brigada Avançada deve ser de 24h, mas foi de {carga_horaria}h."
-                elif tipo_treinamento == 'reciclagem' and carga_horaria < 16:
-                    return False, f"Carga horária para reciclagem de Brigada Avançada deve ser de 16h, mas foi de {carga_horaria}h."
+        if rule is None:
+            # Se não encontrei regra específica, comportamento seguro: aprova
+            logger.warning(f"Nenhuma regra encontrada para '{norma_padronizada}'. Aprovando carga horária por segurança.")
+            return True, f"Regra para '{norma_padronizada}' não encontrada no sistema. Carga horária aceita."
 
-        elif norma_padronizada == "NR-11":
-            if tipo_treinamento == 'formação' and carga_horaria < 16:
-                return False, f"Carga horária para formação (NR-11) parece baixa ({carga_horaria}h). O mínimo comum é 16h."
-            elif tipo_treinamento == 'reciclagem' and carga_horaria < 16:
-                 return False, f"Carga horária para reciclagem (NR-11) deve ser de 16h, mas foi de {carga_horaria}h."
-        
-        elif norma_padronizada == "NBR-16710 RESGATE TÉCNICO":
-            is_industrial_rescue = "industrial" in str(modulo).lower()
-            if is_industrial_rescue:
-                if tipo_treinamento == 'formação' and carga_horaria < 24:
-                    return False, f"Carga horária para formação de Resgate Técnico Industrial (NBR 16710) deve ser de no mínimo 24h, mas foi de {carga_horaria}h."
-                elif tipo_treinamento == 'reciclagem' and carga_horaria < 24:
-                    return False, f"Carga horária para reciclagem de Resgate Técnico Industrial (NBR 16710) deve ser de no mínimo 24h, mas foi de {carga_horaria}h."
-        
-        return True, "Carga horária conforme."
+        # 2. Determina qual coluna de carga horária usar baseado no tipo de treinamento
+        if tipo_treinamento == 'formação':
+            ch_minima_rule = rule.get('carga_horaria_minima_horas')
+        elif tipo_treinamento == 'reciclagem':
+            ch_minima_rule = rule.get('reciclagem_carga_horaria_horas')
+        else:
+            ch_minima_rule = None
+
+        # 3. VALIDAÇÃO PRINCIPAL: Se ch_minima_rule é Nulo/NaN, carga horária é definida pelo empregador
+        if pd.isna(ch_minima_rule):
+            if carga_horaria > 0:
+                return True, f"Carga horária para '{norma_padronizada}' pode ser definida pelo empregador. Valor {carga_horaria}h aceito."
+            else:
+                return False, "Carga horária deve ser maior que zero."
+
+        # 4. VALIDAÇÃO: Se há uma carga horária mínima definida, compara com a informada
+        if carga_horaria < ch_minima_rule:
+            return False, f"Carga horária para {tipo_treinamento} ({norma_padronizada}) deve ser de no mínimo {int(ch_minima_rule)}h, mas foi de {carga_horaria}h."
+
+        return True, "Carga horária conforme à regulamentação."

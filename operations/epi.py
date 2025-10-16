@@ -16,11 +16,17 @@ logger = logging.getLogger('segsisone_app.epi_manager')
 
 class EPIManager:
     def __init__(self, unit_id: str):
-        # ✅ VALIDAÇÃO DE ENTRADA
-        if not unit_id or unit_id == 'None' or str(unit_id).strip() == '':
-            logger.error("EPIManager inicializado sem unit_id válido")
-            raise ValueError("unit_id não pode ser vazio")
-        
+        # ✅ CORREÇÃO (#2): Validação de entrada robusta.
+        if not unit_id or not isinstance(unit_id, str) or unit_id.strip() in ['', 'None', 'none', 'null']:
+            logger.error(f"EPIManager inicializado com unit_id inválido: {unit_id}")
+            raise ValueError("unit_id não pode ser vazio ou None")
+
+        unit_id = unit_id.strip()
+
+        # ✅ REMOVIDO: Todos os dicionários hardcoded movidos para NRRulesManager
+        from operations.nr_rules_manager import NRRulesManager
+        self.nr_rules_manager = NRRulesManager(unit_id)
+
         self.supabase_ops = SupabaseOperations(unit_id)
         self.unit_id = unit_id
         self.storage_manager = SupabaseStorageManager(unit_id)

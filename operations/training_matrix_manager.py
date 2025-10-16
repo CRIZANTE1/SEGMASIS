@@ -16,29 +16,35 @@ class MatrixManager:
     def __init__(self, unit_id: str):
         """
         Inicializa o gerenciador da Matriz de Treinamentos para uma unidade.
-        
+
         Args:
             unit_id: ID da unidade operacional
         """
-        # ✅ CORREÇÃO: Validação de entrada
-        if not unit_id:
-            raise ValueError("unit_id não pode ser vazio")
-        
-        self.unit_id = unit_id
-        self.supabase_ops = SupabaseOperations(unit_id)
-        
+        # ✅ CORREÇÃO (#2): Validação de entrada robusta.
+        if not unit_id or not isinstance(unit_id, str) or unit_id.strip() in ['', 'None', 'none', 'null']:
+            logger.error(f"MatrixManager inicializado com unit_id inválido: {unit_id}")
+            raise ValueError("unit_id não pode ser vazio ou None")
+
+        self.unit_id = unit_id.strip()
+
+        # ✅ REMOVIDO: Todos os dicionários hardcoded movidos para NRRulesManager
+        from operations.nr_rules_manager import NRRulesManager
+        self.nr_rules_manager = NRRulesManager(self.unit_id)
+
+        self.supabase_ops = SupabaseOperations(self.unit_id)
+
         # Definição de colunas esperadas
         self.columns_functions = ['id', 'nome_funcao', 'descricao']
         self.columns_matrix = ['id', 'id_funcao', 'norma_obrigatoria']
-        
+
         # Cache interno
         self._functions_df = None
         self._matrix_df = None
-        
+
         # Inicializa analisador de PDF
         try:
             self.pdf_analyzer = PDFQA()
-            logger.info(f"MatrixManager inicializado para unit_id: ...{unit_id[-6:]}")
+            logger.info(f"MatrixManager inicializado para unit_id: ...{self.unit_id[-6:]}")
         except Exception as e:
             logger.error(f"Erro ao inicializar PDFQA: {e}")
             raise
@@ -306,26 +312,46 @@ class MatrixManager:
         Returns:
             Nome da função mais próxima ou None
         """
-        # ✅ CORREÇÃO: Validações
+        # ✅ VALIDAÇÕES MELHORADAS
         if not employee_cargo or not isinstance(employee_cargo, str):
             logger.debug("Cargo do funcionário não fornecido ou inválido")
             return None
         
+        # Remove espaços e valida novamente
+        employee_cargo = employee_cargo.strip()
+        if not employee_cargo:
+            logger.debug("Cargo vazio após strip()")
+            return None
+        
         try:
-            # Garante que temos um DataFrame válido
+            # ✅ Acessa a property (carrega dados se necessário)
             df = self.functions_df
-            if df.empty or 'nome_funcao' not in df.columns:
-                logger.debug("DataFrame de funções está vazio ou sem coluna nome_funcao")
+            
+            # ✅ Validações do DataFrame
+            if df is None or df.empty:
+                logger.debug("DataFrame de funções está vazio")
                 return None
             
-            # Obtém lista de funções
+            if 'nome_funcao' not in df.columns:
+                logger.error("Coluna 'nome_funcao' não existe no DataFrame")
+                return None
+            
+            # Obtém lista de funções e remove nulos
             function_names = df['nome_funcao'].dropna().tolist()
+            
             if not function_names:
                 logger.debug("Nenhuma função disponível para matching")
                 return None
 
+            # ✅ Importação dinâmica por segurança
+            try:
+                from fuzzywuzzy import process as fuzz_process
+            except ImportError:
+                logger.error("Módulo fuzzywuzzy não instalado")
+                return None
+            
             # Faz o fuzzy matching
-            best_match = process.extractOne(employee_cargo, function_names)
+            best_match = fuzz_process.extractOne(employee_cargo, function_names)
             
             if not best_match:
                 logger.debug(f"Nenhum match encontrado para '{employee_cargo}'")
@@ -342,7 +368,7 @@ class MatrixManager:
                 return None
                 
         except Exception as e:
-            logger.error(f"Erro no fuzzy matching: {e}")
+            logger.error(f"Erro no fuzzy matching: {e}", exc_info=True)
             return None
         
     def get_training_recommendations_for_function(

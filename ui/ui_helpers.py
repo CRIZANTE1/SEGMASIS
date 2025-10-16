@@ -126,7 +126,11 @@ def process_aso_pdf():
             st.session_state.aso_uploader_tab = None
         return
 
-    if 'employee_manager' in st.session_state:
+    if 'employee_manager' not in st.session_state:
+        st.error("❌ Sistema não inicializado corretamente")
+        return
+
+    try:
         _run_analysis_and_audit(
             manager=st.session_state.employee_manager,
             analysis_method_name='analyze_aso_pdf',
@@ -134,6 +138,12 @@ def process_aso_pdf():
             doc_type_str='ASO',
             employee_id_key='aso_employee_add'
         )
+    except Exception as e:
+        logger.error(f"Erro ao processar ASO: {e}", exc_info=True)
+        st.error(f"❌ Erro ao processar ASO: {str(e)}")
+        # Limpa o estado para permitir nova tentativa
+        if 'aso_uploader_tab' in st.session_state:
+            del st.session_state.aso_uploader_tab
 
 def process_training_pdf():
     """Função de callback para o uploader de Treinamento."""
@@ -143,7 +153,11 @@ def process_training_pdf():
             st.session_state.training_uploader_tab = None
         return
 
-    if 'employee_manager' in st.session_state:
+    if 'employee_manager' not in st.session_state:
+        st.error("❌ Sistema não inicializado corretamente")
+        return
+
+    try:
         _run_analysis_and_audit(
             manager=st.session_state.employee_manager,
             analysis_method_name='analyze_training_pdf',
@@ -151,6 +165,11 @@ def process_training_pdf():
             doc_type_str='Treinamento',
             employee_id_key='training_employee_add'
         )
+    except Exception as e:
+        logger.error(f"Erro ao processar Treinamento: {e}", exc_info=True)
+        st.error(f"❌ Erro ao processar Treinamento: {str(e)}")
+        if 'training_uploader_tab' in st.session_state:
+            del st.session_state.training_uploader_tab
 
 def process_company_doc_pdf():
     """Função de callback para o uploader de Documento da Empresa."""
@@ -160,13 +179,22 @@ def process_company_doc_pdf():
             st.session_state.doc_uploader_tab = None
         return
 
-    if 'docs_manager' in st.session_state:
+    if 'docs_manager' not in st.session_state:
+        st.error("❌ Sistema não inicializado corretamente")
+        return
+
+    try:
         _run_analysis_and_audit(
             manager=st.session_state.docs_manager,
             analysis_method_name='analyze_company_doc_pdf',
             uploader_key='doc_uploader_tab',
             doc_type_str='Doc. Empresa'
         )
+    except Exception as e:
+        logger.error(f"Erro ao processar Documento da Empresa: {e}", exc_info=True)
+        st.error(f"❌ Erro ao processar Documento da Empresa: {str(e)}")
+        if 'doc_uploader_tab' in st.session_state:
+            del st.session_state.doc_uploader_tab
 
 def process_epi_pdf():
     """Função de callback para o uploader de Ficha de EPI."""
@@ -176,21 +204,31 @@ def process_epi_pdf():
             st.session_state.epi_uploader_tab = None
         return
     
-    if st.session_state.get('epi_uploader_tab') and 'epi_manager' in st.session_state:
-        epi_manager = st.session_state.epi_manager
-        anexo = st.session_state.epi_uploader_tab
-        
-        with st.spinner("🤖 Analisando ficha de EPI com IA..."):
-            epi_info = epi_manager.analyze_epi_pdf(anexo)
+    if 'epi_manager' not in st.session_state:
+        st.error("❌ Sistema não inicializado corretamente")
+        return
+
+    try:
+        if st.session_state.get('epi_uploader_tab'):
+            epi_manager = st.session_state.epi_manager
+            anexo = st.session_state.epi_uploader_tab
             
-            if epi_info:
-                arquivo_hash = calcular_hash_arquivo(anexo)
+            with st.spinner("🤖 Analisando ficha de EPI com IA..."):
+                epi_info = epi_manager.analyze_epi_pdf(anexo)
                 
-                st.session_state.epi_info_para_salvar = epi_info
-                st.session_state.epi_anexo_para_salvar = anexo
-                st.session_state.epi_hash_para_salvar = arquivo_hash
-                st.session_state.epi_funcionario_para_salvar = st.session_state.get('epi_employee_add')
-                
-                st.success("✅ Análise de EPI concluída!")
-            else:
-                st.error("❌ Não foi possível extrair informações da ficha de EPI.")
+                if epi_info:
+                    arquivo_hash = calcular_hash_arquivo(anexo)
+                    
+                    st.session_state.epi_info_para_salvar = epi_info
+                    st.session_state.epi_anexo_para_salvar = anexo
+                    st.session_state.epi_hash_para_salvar = arquivo_hash
+                    st.session_state.epi_funcionario_para_salvar = st.session_state.get('epi_employee_add')
+                    
+                    st.success("✅ Análise de EPI concluída!")
+                else:
+                    st.error("❌ Não foi possível extrair informações da ficha de EPI.")
+    except Exception as e:
+        logger.error(f"Erro ao processar Ficha de EPI: {e}", exc_info=True)
+        st.error(f"❌ Erro ao processar Ficha de EPI: {str(e)}")
+        if 'epi_uploader_tab' in st.session_state:
+            del st.session_state.epi_uploader_tab

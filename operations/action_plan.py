@@ -7,12 +7,17 @@ from operations.cached_loaders import load_all_unit_data
 
 class ActionPlanManager:
     def __init__(self, unit_id: str):
-        if not unit_id or unit_id == 'None' or str(unit_id).strip() == '':
-            logger.error("ActionPlanManager inicializado sem unit_id válido")
-            raise ValueError("unit_id não pode ser vazio")
+        # Validação melhorada
+        if not unit_id or not isinstance(unit_id, str) or unit_id.strip() in ['', 'None', 'none', 'null']:
+            logger.error(f"ActionPlanManager inicializado com unit_id inválido: {unit_id}")
+            raise ValueError("unit_id não pode ser vazio ou None")
+        
+        # Remove espaços em branco
+        unit_id = unit_id.strip()
         
         self.supabase_ops = SupabaseOperations(unit_id)
         self.unit_id = unit_id
+        # ... resto do código
         
         self.columns = [
             'id', 'audit_run_id', 'id_empresa', 'id_documento_original', 

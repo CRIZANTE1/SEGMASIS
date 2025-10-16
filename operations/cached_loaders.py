@@ -106,8 +106,47 @@ def load_all_units_consolidated_data(admin_email: str = None) -> dict:
 
         logger.info("✅ Dados consolidados carregados com sucesso usando RLS.")
         return consolidated_data
-        
+
     except Exception as e:
         logger.error(f"❌ Erro ao carregar dados consolidados: {e}", exc_info=True)
         st.error(f"Ocorreu um erro ao buscar os dados globais: {e}")
         return _get_empty_consolidated_data()
+
+# NOVA FUNÇÃO PARA CARREGAR AS REGRAS DE NRs
+@st.cache_data(ttl=3600, show_spinner="Carregando regras de conformidade...")
+def load_nr_rules_data() -> pd.DataFrame:
+    """
+    Carrega e junta todas as regras de NRs, treinamentos e módulos do banco de dados.
+    Cache de 1 hora, pois essas regras mudam raramente.
+    """
+    logger.info("Carregando todas as regras de NRs do banco de dados...")
+    try:
+        # Usamos unit_id=None para garantir que estamos usando o engine global
+        supabase_ops = SupabaseOperations(unit_id=None)
+
+        # Query que já une as tabelas para facilitar o trabalho no Pandas
+        query = """
+        SELECT
+            n.id AS norma_id,
+            n.norma,
+            n.unit_id,
+            n.is_active AS norma_is_active,
+            t.id AS treinamento_id,
+            t.titulo,
+            t.carga_horaria_minima_horas,
+            t.reciclagem_anos,
+            t.reciclagem_carga_horaria_horas,
+            t.cargas_por_risco,
+            t.is_active AS treinamento_is_active
+        FROM public.regras_normas AS n
+        JOIN public.regras_treinamentos AS t ON n.id = t.id_norma;
+        """
+        # Usamos o engine diretamente para executar a query com JOINs
+        df = pd.read_sql(query, supabase_ops.engine)
+
+        logger.info(f"{len(df)} regras de treinamento carregadas com sucesso.")
+        return df
+    except Exception as e:
+        logger.error(f"Erro ao carregar regras de NRs: {e}", exc_info=True)
+        st.error("Falha crítica ao carregar as regras de conformidade do sistema.")
+        return pd.DataFrame()

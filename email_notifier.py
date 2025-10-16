@@ -749,18 +749,10 @@ def main():
                 
                 # Categoriza os dados
                 categorized_data = categorize_expirations_for_unit(employee_manager, docs_manager)
-                
-                # ✅ VALIDAÇÃO 6: Contagem rigorosa de pendências
-                total_items = 0
-                for category_name, category_df in categorized_data.items():
-                    if not category_df.empty:
-                        # ✅ CRÍTICO: Valida que os dados são REALMENTE desta unidade
-                        # Remove qualquer linha que não seja desta unidade (por segurança)
-                        if 'unidade' in category_df.columns:
-                            category_df_clean = category_df[category_df['unidade'] == unit_name].copy()
-                            total_items += len(category_df_clean)
-                        else:
-                            total_items += len(category_df)
+
+                # ✅ CORREÇÃO (#3): Contagem simplificada de pendências.
+                # Os managers já são instanciados com o unit_id correto, garantindo dados da unidade.
+                total_items = sum(len(category_df) for category_df in categorized_data.values() if not category_df.empty)
                 
                 if total_items == 0:
                     logger.info(f"ℹ️ Unidade '{unit_name}' processada - nenhuma pendência encontrada.")

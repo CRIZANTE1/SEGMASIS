@@ -1100,57 +1100,58 @@ def show_dashboard_page():
                             
                             with col1:
                                 edited_data = st.date_input(
-                                    "📅 Data de Realização *", 
+                                    "📅 Data de Realização *",
                                     value=training_info.get('data'),
                                     help="Data em que o treinamento foi concluído"
                                 )
-                            
+
                             with col2:
-                                norma_options = sorted(
-                                    list(employee_manager.nr_config.keys()) + 
-                                    list(employee_manager.nr20_config.keys())
-                                )
-                                
+                                # ✅ LÓGICA DINÂMICA PARA NORMAS
+                                norma_options = employee_manager.nr_rules_manager.get_norma_options()
+
                                 current_norma = training_info.get('norma', '')
                                 try:
                                     default_norma_index = norma_options.index(current_norma)
                                 except ValueError:
                                     default_norma_index = 0
-                                
+
                                 edited_norma = st.selectbox(
-                                    "📋 Norma *", 
-                                    options=norma_options, 
+                                    "📋 Norma *",
+                                    options=norma_options,
                                     index=default_norma_index,
                                     help="Norma Regulamentadora do treinamento"
                                 )
-                            
+
                             col3, col4 = st.columns(2)
-                            
+
                             with col3:
-                                current_modulo = training_info.get('modulo', 'N/A')
-                                
-                                if edited_norma == "NR-20":
-                                    modulo_options = ['Básico', 'Intermediário', 'Avançado I', 'Avançado II']
+                                # ✅ LÓGICA DINÂMICA PARA MÓDULOS
+                                module_options = employee_manager.nr_rules_manager.get_module_options_for_norma(edited_norma)
+
+                                # Se a norma tem múltiplos treinamentos, mostramos um selectbox.
+                                if len(module_options) > 1:
+                                    current_modulo_title = training_info.get('titulo', training_info.get('modulo'))
+
+                                    # Tenta encontrar o índice do módulo extraído pela IA
                                     try:
-                                        default_mod_index = modulo_options.index(current_modulo)
-                                    except ValueError:
+                                        # Usa fuzzy matching para encontrar a melhor opção
+                                        from fuzzywuzzy import process
+                                        best_match, _ = process.extractOne(current_modulo_title, module_options)
+                                        default_mod_index = module_options.index(best_match)
+                                    except (ValueError, TypeError):
                                         default_mod_index = 0
-                                    edited_modulo = st.selectbox("🎯 Módulo NR-20 *", modulo_options, index=default_mod_index)
-                                elif edited_norma == "NR-33":
-                                    modulo_options = ['Trabalhador Autorizado', 'Supervisor']
-                                    try:
-                                        default_mod_index = modulo_options.index(current_modulo)
-                                    except ValueError:
-                                        default_mod_index = 0
-                                    edited_modulo = st.selectbox("🎯 Módulo NR-33 *", modulo_options, index=default_mod_index)
-                                elif "NR-10" in edited_norma:
-                                    if "SEP" in edited_norma:
-                                        edited_modulo = "SEP"
-                                        st.info("💡 Módulo: **SEP** (Sistema Elétrico de Potência)")
-                                    else:
-                                        edited_modulo = st.text_input("🎯 Módulo", value=current_modulo)
+
+                                    edited_modulo = st.selectbox(
+                                        f"🎯 Módulo Específico ({edited_norma}) *",
+                                        module_options,
+                                        index=default_mod_index
+                                    )
                                 else:
-                                    edited_modulo = st.text_input("🎯 Módulo (opcional)", value=current_modulo)
+                                    # Se há apenas um treinamento ou nenhum, um campo de texto é suficiente.
+                                    edited_modulo = st.text_input(
+                                        "🎯 Módulo (opcional)",
+                                        value=training_info.get('modulo', 'N/A')
+                                    )
                             
                             with col4:
                                 tipo_options = ["formação", "reciclagem"]
@@ -1289,39 +1290,48 @@ def show_dashboard_page():
                         with col1:
                             manual_data = st.date_input("📅 Data de Realização *", value=date.today(), max_value=date.today())
                         with col2:
-                            norma_options = sorted(list(employee_manager.nr_config.keys()) + ['NR-20'])
-                            manual_norma = st.selectbox("📋 Norma *", options=norma_options)
-                        
+                            # ✅ PASSO 2: Busca as normas disponíveis dinamicamente
+                            norma_options = employee_manager.nr_rules_manager.get_norma_options()
+                            manual_norma = st.selectbox("📋 Norma *", options=norma_options, key="manual_norma_select")
+
+                        # ✅ PASSO 2: Cria o selectbox de módulo dinâmico
+                        module_options = employee_manager.nr_rules_manager.get_module_options_for_norma(manual_norma)
+
                         col3, col4 = st.columns(2)
                         with col3:
-                            if manual_norma == "NR-20":
-                                manual_modulo = st.selectbox("🎯 Módulo NR-20 *", ['Básico', 'Intermediário', 'Avançado I', 'Avançado II'])
-                            elif manual_norma == "NR-33":
-                                manual_modulo = st.selectbox("🎯 Módulo NR-33 *", ['Trabalhador Autorizado', 'Supervisor'])
+                            # Se a norma selecionada tiver múltiplos treinamentos (módulos), exibe um selectbox
+                            if len(module_options) > 1:
+                                manual_modulo = st.selectbox("🎯 Módulo Específico *", options=module_options, key="manual_module_select")
                             else:
-                                manual_modulo = st.text_input("🎯 Módulo (opcional)")
+                                # Caso contrário, exibe um campo de texto livre para módulos não-padrão
+                                manual_modulo = st.text_input("🎯 Módulo (opcional)", key="manual_module_text")
                         with col4:
                             manual_tipo = st.selectbox("🔄 Tipo *", ["formação", "reciclagem"])
-                        
+
                         manual_ch = st.number_input("⏱️ Carga Horária (horas) *", min_value=1, max_value=200, value=8)
-                        
+
                         st.markdown("#### ⏰ Vencimento")
+
+                        # O cálculo do vencimento já usa a nova lógica, então não precisa de alteração aqui
                         vencimento_manual_calc = employee_manager.calcular_vencimento_treinamento(manual_data, manual_norma, manual_modulo, manual_tipo)
-                        manual_vencimento = st.date_input("Data de Vencimento *", value=vencimento_manual_calc if vencimento_manual_calc else manual_data + pd.DateOffset(years=1))
-                        
+
+                        # Se o cálculo retornar uma data, use-a como padrão. Caso contrário, default de 1 ano.
+                        default_vencimento = vencimento_manual_calc if vencimento_manual_calc else manual_data + pd.DateOffset(years=1)
+                        manual_vencimento = st.date_input("Data de Vencimento *", value=default_vencimento)
+
                         manual_training_arquivo = st.file_uploader("📎 Anexar Certificado em PDF *", type=['pdf'], key="manual_training_file")
-                        
+
                         col_submit, col_cancel = st.columns([3, 1])
-                        
+
                         with col_submit:
                             submit_manual_training = st.form_submit_button("💾 Salvar Treinamento", type="primary", use_container_width=True)
-                        
+
                         with col_cancel:
                             cancel_manual_training = st.form_submit_button("❌ Cancelar", use_container_width=True)
-                        
+
                         if cancel_manual_training:
                             st.rerun()
-                        
+
                         if submit_manual_training:
                             if not manual_training_arquivo:
                                 st.error("❌ É obrigatório anexar o certificado em PDF!")
@@ -1329,31 +1339,41 @@ def show_dashboard_page():
                             if manual_vencimento <= manual_data:
                                 st.error("❌ O vencimento deve ser após a data de realização!")
                                 st.stop()
-                            
+
+                            # A validação da carga horária já usa a nova lógica, então não precisa de alteração aqui
+                            is_valid, validation_msg = employee_manager.validar_treinamento(
+                                manual_norma, manual_modulo, manual_tipo, manual_ch
+                            )
+
+                            if not is_valid:
+                                st.error(f"❌ Validação falhou: {validation_msg}")
+                                st.stop()
+
                             with st.spinner("💾 Salvando..."):
                                 from operations.file_hash import calcular_hash_arquivo
                                 arquivo_hash = calcular_hash_arquivo(manual_training_arquivo)
                                 emp_name = employee_manager.get_employee_name(selected_employee_training)
                                 nome_arquivo = f"TRAINING_{emp_name.replace(' ', '_')}_{manual_norma.replace('-', '')}_{manual_data.strftime('%Y%m%d')}.pdf"
                                 arquivo_id = employee_manager.upload_documento_e_obter_link(manual_training_arquivo, nome_arquivo)
-                                
+
                                 if arquivo_id:
                                     training_data = {
                                         'funcionario_id': selected_employee_training,
-                                        'anexo': arquivo_id, 
-                                        'arquivo_hash': arquivo_hash, 
+                                        'anexo': arquivo_id,
+                                        'arquivo_hash': arquivo_hash,
                                         'data': manual_data,
-                                        'norma': manual_norma, 
-                                        'tipo_treinamento': manual_tipo, 
+                                        'norma': manual_norma,
+                                        'tipo_treinamento': manual_tipo,
                                         'carga_horaria': manual_ch,
-                                        'vencimento': manual_vencimento, 
+                                        'vencimento': manual_vencimento,
                                         'modulo': manual_modulo
                                     }
                                     if employee_manager.add_training(training_data):
                                         st.success("✅ Treinamento salvo com sucesso!")
                                         st.rerun()
                                     else:
-                                        st.error("❌ Falha ao salvar no banco de dados.")
+                                        # A função add_training já exibe um st.error mais específico
+                                        pass
                                 else:
                                     st.error("❌ Falha no upload do arquivo.")
             else:
