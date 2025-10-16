@@ -339,9 +339,9 @@ class EmployeeManager:
                 modulo = 'Básico'
 
             vencimento = training_data.get('vencimento')
-            if not vencimento:
-                logger.error("Vencimento não calculado para o treinamento")
-                st.error("❌ Erro: Vencimento do treinamento não foi calculado")
+            if not vencimento or not isinstance(vencimento, (date, datetime)):
+                logger.error(f"Vencimento inválido: {type(vencimento)}")
+                st.error("❌ Erro: Vencimento do treinamento inválido")
                 return None
 
             new_data = {

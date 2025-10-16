@@ -68,9 +68,9 @@ class NRRulesManager:
                 best_rule = rules_to_search[rules_to_search['search_key'] == best_match_key]
                 return best_rule.iloc[0]
 
-        # Se não houver módulo ou match, retorna a primeira regra como fallback (pode ser ajustado)
-        logger.warning(f"Múltiplas regras encontradas para '{norma_nome}' e o módulo '{modulo_nome}' não foi específico o suficiente. Usando a primeira regra como padrão.")
-        return rules_to_search.iloc[0]
+        # Se não houver match satisfatório, retorna None
+        logger.error(f"Ambiguidade: {len(rules_to_search)} regras para '{norma_nome}' sem critério de desempate claro")
+        return None
 
     def get_norma_options(self) -> list:
         """Retorna uma lista de todas as normas ativas disponíveis."""

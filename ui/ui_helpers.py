@@ -1,8 +1,11 @@
+import logging
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from operations.file_hash import calcular_hash_arquivo
 from auth.auth_utils import check_feature_permission
+
+logger = logging.getLogger(__name__)
 
 def mostrar_info_normas():
     """Exibe informações sobre as normas regulamentadoras."""

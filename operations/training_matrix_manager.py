@@ -221,7 +221,7 @@ class MatrixManager:
         # Insere novas funções
         if new_functions_to_add:
             self.supabase_ops.insert_batch("funcoes", new_functions_to_add)
-            self._functions_df = None
+            self._load_functions_data()  # ✅ Recarrega imediatamente
 
         updated_functions_df = self.functions_df.copy()
         current_matrix_df = self.matrix_df.copy()

@@ -22,9 +22,18 @@ class SupabaseOperations:
     def __init__(self, unit_id: str = None):
         if self._initialized:
             return
-        
+
         self.unit_id = unit_id
         self.global_tables = ['usuarios', 'unidades', 'log_auditoria']
+
+        # ✅ ADICIONAR: Whitelist de tabelas permitidas
+        self.allowed_tables = {
+            'usuarios', 'unidades', 'log_auditoria', 'empresas',
+            'funcionarios', 'asos', 'treinamentos', 'fichas_epi',
+            'documentos_empresa', 'plano_acao', 'funcoes',
+            'matriz_treinamentos', 'regras_normas', 'regras_treinamentos',
+            'solicitacoes_acesso', 'solicitacoes_suporte'
+        }
         
         try:
             self.engine = get_database_engine()
@@ -58,6 +67,11 @@ class SupabaseOperations:
             return None
 
     def get_table_data(self, table_name: str) -> pd.DataFrame:
+        # ✅ ADICIONAR: Validação de tabela
+        if table_name not in self.allowed_tables:
+            logger.error(f"Tentativa de acesso a tabela não autorizada: {table_name}")
+            return pd.DataFrame()
+
         if not self.engine:
             logger.error("Database engine não está disponível")
             return pd.DataFrame()
