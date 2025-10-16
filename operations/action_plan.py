@@ -79,6 +79,9 @@ class ActionPlanManager:
             'data_conclusao': None
         }
         
+        if 'prazo' in new_data and (new_data['prazo'] == '' or new_data['prazo'] is None):
+            new_data['prazo'] = None
+
         new_item_id = self.supabase_ops.insert_row("plano_acao", new_data)
         
         if new_item_id:

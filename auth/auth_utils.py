@@ -1,7 +1,7 @@
 import streamlit as st
 from managers.matrix_manager import MatrixManager
-from operations.supabase_operations import SupabaseOperations # <-- ADICIONE ESTA IMPORTAÇÃO
-from operations.audit_logger import log_action # <-- MOVA PARA CIMA
+from operations.supabase_operations import SupabaseOperations
+from operations.audit_logger import log_action
 
 def is_oidc_available():
     """Verifica se o login OIDC está configurado e disponível."""

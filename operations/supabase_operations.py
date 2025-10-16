@@ -36,6 +36,9 @@ class SupabaseOperations:
         self._initialized = True
 
     def get_engine_with_rls(self):
+        """
+        Retorna um engine com contexto RLS do usuário logado.
+        """
         user_email = None
         
         if hasattr(st, 'session_state'):
@@ -44,11 +47,15 @@ class SupabaseOperations:
                 user_email = st.session_state.get('authenticated_user_email')
         
         if not user_email:
-            logger.critical("⚠️ TENTATIVA DE ACESSO SEM AUTENTICAÇÃO!")
-            raise PermissionError("Usuário não autenticado. RLS não pode ser aplicado.")
+            logger.error("Tentativa de obter engine RLS sem e-mail de usuário")
+            return None
         
-        logger.debug(f"Criando engine com RLS para: {user_email}")
-        return get_database_engine(user_email)
+        try:
+            from managers.supabase_config import get_database_engine
+            return get_database_engine(user_email)
+        except Exception as e:
+            logger.error(f"Erro ao criar engine com RLS: {e}")
+            return None
 
     def get_table_data(self, table_name: str) -> pd.DataFrame:
         if not self.engine:
@@ -94,8 +101,8 @@ class SupabaseOperations:
                 conn.commit()
                 
                 row = result.fetchone()
-                if row:
-                    # ✅ CORREÇÃO: Garante que o retorno seja sempre uma string do ID.
+                if row and row[0]:
+                    # Retorna o ID como string
                     return str(row[0])
             
             return None

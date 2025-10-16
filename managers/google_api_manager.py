@@ -14,6 +14,35 @@ class GoogleApiManager:
     Mantida apenas para compatibilidade temporária.
     """
     
+    @staticmethod
+    def _infer_doc_type(filename: str) -> str:
+        """
+        Infere o tipo de documento pelo nome do arquivo.
+        
+        Args:
+            filename: Nome do arquivo
+            
+        Returns:
+            Tipo do documento ('aso', 'treinamento', 'epi', 'doc_empresa')
+        """
+        if not filename or not isinstance(filename, str):
+            return 'aso'  # Default
+        
+        filename_lower = filename.lower()
+        
+        # Prioridade de verificação
+        if 'aso' in filename_lower:
+            return 'aso'
+        elif 'training' in filename_lower or 'treinamento' in filename_lower:
+            return 'treinamento'
+        elif 'epi' in filename_lower:
+            return 'epi'
+        elif any(doc in filename_lower for doc in ['pgr', 'pcmso', 'ppr', 'pca', 'doc_empresa']):
+            return 'doc_empresa'
+        
+        # Default: ASO
+        return 'aso'
+
     def __init__(self):
         """Inicializa o gerenciador usando Supabase Storage."""
         self.storage_manager = SupabaseStorageManager()

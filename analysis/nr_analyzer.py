@@ -188,8 +188,28 @@ class NRAnalyzer:
             return "Erro ao buscar chunks relevantes."
             
     def perform_initial_audit(self, doc_info: dict, file_content: bytes) -> dict | None:
+        """
+        Corrigindo para garantir que doc_info tenha norma
+        """
         doc_type = doc_info.get("type", "documento")
         norma = doc_info.get("norma", "")
+        
+        # Para ASOs e Documentos de Empresa que não têm norma específica
+        if not norma and doc_type in ["ASO", "Doc. Empresa"]:
+            if doc_type == "ASO":
+                norma = "NR-07"
+            elif doc_type == "Doc. Empresa":
+                # Tenta identificar a norma pelo tipo de documento
+                doc_subtype = doc_info.get("tipo_documento", "").upper()
+                if "PGR" in doc_subtype:
+                    norma = "NR-01"
+                elif "PCMSO" in doc_subtype:
+                    norma = "NR-07"
+                elif "PPR" in doc_subtype:
+                    norma = "NR-09"
+                else:
+                    norma = "normas aplicáveis"
+        
         query = f"Quais são os principais requisitos de conformidade para um {doc_type} da norma {norma}?"
         
         relevant_knowledge = self._find_semantically_relevant_chunks(query, top_k=7)

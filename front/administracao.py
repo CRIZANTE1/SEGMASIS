@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import logging
-from datetime import date
+from datetime import date, datetime, timedelta
 from managers.matrix_manager import MatrixManager as GlobalMatrixManager
 from auth.auth_utils import check_permission, get_user_email
 from ui.metrics import display_minimalist_metrics
@@ -165,8 +165,6 @@ def handle_delete_dialog(matrix_manager):
                 else:
                     st.error("Falha ao remover.")
         confirm_dialog()
-
-from datetime import datetime, timedelta
 
 def show_access_request_management(matrix_manager):
     """Gerencia solicitações de acesso pendentes."""
