@@ -32,7 +32,7 @@ def display_audit_results(audit_result):
     summary = audit_result.get("summary", "Indefinido")
     details = audit_result.get("details", [])
     st.markdown("---")
-    st.markdown("#####  Resultado da Auditoria Rápida")
+    st.markdown("##### 🔍 Resultado da Auditoria Rápida")
     
     if summary.lower() == 'conforme':
         st.success(f"**Parecer da IA:** {summary}")
