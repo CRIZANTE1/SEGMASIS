@@ -381,7 +381,9 @@ class EmployeeManager:
             }
                     
             logger.info(f"Salvando treinamento: {norma} - {modulo} para funcionário {funcionario_id}")
-            training_id = self.supabase_ops.insert_row("trainings", new_data)
+            
+            # ✅ CORREÇÃO: Nome correto da tabela
+            training_id = self.supabase_ops.insert_row("treinamentos", new_data)
             
             if training_id:
                 log_action("ADD_TRAINING", {
@@ -403,7 +405,7 @@ class EmployeeManager:
         except Exception as e:
             logger.error(f"Erro crítico ao adicionar treinamento: {e}", exc_info=True)
             st.error(f"❌ Erro inesperado: {str(e)}")
-            st.info(" Tente novamente ou contate o suporte se o erro persistir")
+            st.info("💡 Tente novamente ou contate o suporte se o erro persistir")
             return None
 
     def _set_status(self, table_name: str, item_id: str, status: str):
@@ -665,7 +667,7 @@ class EmployeeManager:
             except Exception as e:
                 logger.error(f"Erro ao deletar arquivo: {e}")
 
-        if self.supabase_ops.delete_row("trainings", training_id):
+        if self.supabase_ops.delete_row("treinamentos", training_id):
             st.cache_data.clear()
             self.load_data()
             return True
