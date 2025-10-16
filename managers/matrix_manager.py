@@ -116,18 +116,22 @@ class MatrixManager:
         return success is not None
         
     def add_unit(self, unit_data: dict) -> bool:
-        result = self.supabase_ops.insert_row("unidades", unit_data)
-        if result:
+        # ✅ CORREÇÃO: insert_row retorna apenas string do ID
+        unit_id = self.supabase_ops.insert_row("unidades", unit_data)
+        if unit_id:
             load_matrix_data.clear()
             self._load_data_from_cache()
-        return result is not None
+            return True
+        return False
 
     def add_user(self, user_data: dict) -> bool:
-        result = self.supabase_ops.insert_row("usuarios", user_data)
-        if result:
+        # ✅ CORREÇÃO: insert_row retorna apenas string do ID
+        user_id = self.supabase_ops.insert_row("usuarios", user_data)
+        if user_id:
             load_matrix_data.clear()
             self._load_data_from_cache()
-        return result is not None
+            return True
+        return False
 
     def update_user(self, user_id: str, updates: dict) -> bool:
         result = self.supabase_ops.update_row("usuarios", user_id, updates)

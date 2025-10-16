@@ -300,11 +300,12 @@ class EmployeeManager:
         if not self.companies_df.empty and cnpj in self.companies_df['cnpj'].values:
             return None, "CNPJ já cadastrado."
         new_data = {'nome': nome, 'cnpj': cnpj, 'status': "Ativo"}
+        # ✅ CORREÇÃO: insert_row retorna apenas string do ID
         company_id = self.supabase_ops.insert_row("empresas", new_data)
         if company_id:
             self.load_data()
             return company_id, "Empresa cadastrada com sucesso"
-        return None, "Falha ao obter ID da empresa."
+        return None, "Falha ao cadastrar empresa."
 
     def add_employee(self, nome, cargo, data_admissao, empresa_id):
         new_data = {'nome': nome, 'cargo': cargo, 'data_admissao': format_date_safe(data_admissao), 'empresa_id': empresa_id, 'status': 'Ativo'}

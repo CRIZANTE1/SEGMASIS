@@ -177,11 +177,12 @@ class CompanyDocsManager:
         }
         
         try:
-            result = self.supabase_ops.insert_row("documentos_empresa", new_data)
-            if result:
+            # ✅ CORREÇÃO: insert_row retorna apenas string do ID
+            doc_id = self.supabase_ops.insert_row("documentos_empresa", new_data)
+            if doc_id:
                 st.cache_data.clear()
                 self.load_company_data()
-                return result['id']
+                return doc_id
             return None
         except Exception as e:
             st.error(f"Erro ao adicionar documento da empresa: {e}")

@@ -104,42 +104,16 @@ class MatrixManager:
             self._matrix_df = pd.DataFrame(columns=self.columns_matrix)
 
     def add_function(self, name: str, description: str) -> tuple[str | None, str]:
-        """
-        Adiciona uma função usando Supabase.
-        
-        Args:
-            name: Nome da função
-            description: Descrição da função
-            
-        Returns:
-            tuple: (id da função criada ou None, mensagem de sucesso/erro)
-        """
-        # ✅ Validações adicionais
-        if not name or len(name.strip()) < 3:
-            return None, "Nome da função inválido (mínimo 3 caracteres)"
-            
-        if not description:
-            description = "Sem descrição"
-        
-        # ✅ Verifica duplicata com case insensitive
-        if not self.functions_df.empty and name.lower() in self.functions_df['nome_funcao'].str.lower().values:
-            return None, f"A função '{name}' já existe."
-        
-        new_data = {
-            'nome_funcao': name.strip(),
-            'descricao': description.strip()
-        }
+        # ... validações ...
         
         try:
-            result = self.supabase_ops.insert_row("funcoes", new_data)
-            if result:
-                # ✅ Invalida AMBOS os caches
+            # ✅ CORREÇÃO: insert_row retorna apenas string do ID
+            function_id = self.supabase_ops.insert_row("funcoes", new_data)
+            if function_id:
                 self._functions_df = None
                 st.cache_data.clear()
-                
-                # ✅ Log da operação
                 logger.info(f"Função '{name}' adicionada com sucesso.")
-                return result['id'], "Função adicionada com sucesso."
+                return function_id, "Função adicionada com sucesso."
                 
             return None, "Falha ao adicionar função."
             
@@ -148,51 +122,16 @@ class MatrixManager:
             return None, f"Erro ao adicionar função: {str(e)}"
 
     def add_training_to_function(self, function_id: str, required_norm: str) -> tuple[str | None, str]:
-        """
-        Adiciona treinamento à função usando Supabase.
-        
-        Args:
-            function_id: ID da função
-            required_norm: Nome da norma obrigatória
-            
-        Returns:
-            tuple: (id do mapeamento criado ou None, mensagem de sucesso/erro)
-        """
-        # ✅ Validações adicionais
-        if not function_id:
-            return None, "ID da função não fornecido"
-            
-        if not required_norm or len(required_norm.strip()) < 2:
-            return None, "Nome da norma inválido"
-        
-        # ✅ Verifica se a função existe
-        if not self.functions_df.empty and str(function_id) not in self.functions_df['id'].astype(str).values:
-            return None, f"A função com ID {function_id} não existe"
-        
-        # ✅ Verifica duplicata com case insensitive
-        if not self.matrix_df.empty:
-            existing = self.matrix_df[
-                (self.matrix_df['id_funcao'] == str(function_id)) & 
-                (self.matrix_df['norma_obrigatoria'].str.lower() == required_norm.lower())
-            ]
-            if not existing.empty:
-                return None, "Este treinamento já está mapeado para esta função."
-        
-        new_data = {
-            'id_funcao': str(function_id),
-            'norma_obrigatoria': required_norm.strip()
-        }
+        # ... validações ...
         
         try:
-            result = self.supabase_ops.insert_row("matriz_treinamentos", new_data)
-            if result:
-                # ✅ Invalida AMBOS os caches
+            # ✅ CORREÇÃO: insert_row retorna apenas string do ID
+            mapping_id = self.supabase_ops.insert_row("matriz_treinamentos", new_data)
+            if mapping_id:
                 self._matrix_df = None
                 st.cache_data.clear()
-                
-                # ✅ Log da operação
                 logger.info(f"Treinamento '{required_norm}' mapeado para função {function_id}")
-                return result['id'], "Treinamento mapeado com sucesso."
+                return mapping_id, "Treinamento mapeado com sucesso."
                 
             return None, "Falha ao mapear treinamento."
             

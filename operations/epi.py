@@ -167,9 +167,10 @@ class EPIManager:
                 'arquivo_hash': arquivo_hash or ''
             }
             try:
-                result = self.supabase_ops.insert_row("fichas_epi", new_data)
-                if result:
-                    saved_ids.append(result['id'])
+                # ✅ CORREÇÃO: insert_row retorna apenas string do ID
+                epi_id = self.supabase_ops.insert_row("fichas_epi", new_data)
+                if epi_id:
+                    saved_ids.append(epi_id)
             except Exception as e:
                 st.error(f"Erro ao adicionar o item '{item.get('descricao')}': {e}")
                 continue
