@@ -74,15 +74,27 @@ def process_company_doc_pdf():
 
 def process_epi_pdf():
     """Função de callback para o uploader de Ficha de EPI."""
-    # --- INÍCIO DA ALTERAÇÃO ---
     if not check_feature_permission('premium_ia'):
         st.error("Você não tem permissão para usar a análise com IA. Upgrade para o plano Premium.")
         if 'epi_uploader_tab' in st.session_state:
-            st.session_state.epi_uploader_tab = None # Limpa o uploader
+            st.session_state.epi_uploader_tab = None
         return
-    # --- FIM DA ALTERAÇÃO ---
     
     if st.session_state.get('epi_uploader_tab') and 'epi_manager' in st.session_state:
         epi_manager = st.session_state.epi_manager
         anexo = st.session_state.epi_uploader_tab
-        # ... (resto do código inalterado)
+        
+        with st.spinner("Analisando ficha de EPI com IA..."):
+            epi_info = epi_manager.analyze_epi_pdf(anexo)
+            
+            if epi_info:
+                arquivo_hash = calcular_hash_arquivo(anexo)
+                
+                st.session_state.epi_info_para_salvar = epi_info
+                st.session_state.epi_anexo_para_salvar = anexo
+                st.session_state.epi_hash_para_salvar = arquivo_hash
+                st.session_state.epi_funcionario_para_salvar = st.session_state.get('epi_employee_add')
+                
+                st.success("Análise de EPI concluída!")
+            else:
+                st.error("Não foi possível extrair informações da ficha de EPI.")
