@@ -37,7 +37,7 @@ def _get_empty_consolidated_data() -> dict:
     }
 
 @st.cache_data(ttl=600, show_spinner="Carregando dados consolidados...")
-def load_all_units_consolidated_data() -> dict:
+def load_all_units_consolidated_data(admin_email: str = None) -> dict:
     """
     Carrega dados de TODAS as unidades para a visão global do admin,
     usando o contexto RLS do usuário logado para garantir permissão.
@@ -48,7 +48,11 @@ def load_all_units_consolidated_data() -> dict:
         # ✅ CORREÇÃO: Usa uma instância de SupabaseOperations, mas vamos usar um engine com RLS.
         supabase_ops = SupabaseOperations(unit_id=None)
         
-        admin_email = get_user_email()
+        if not admin_email:
+            # Se não for fornecido, tenta buscar do contexto
+            from auth.auth_utils import get_user_email
+            admin_email = get_user_email()
+            
         if not admin_email:
             logger.error("E-mail do admin não fornecido para carregar dados globais.")
             return _get_empty_consolidated_data()
@@ -58,7 +62,8 @@ def load_all_units_consolidated_data() -> dict:
         if not engine_with_rls:
             logger.error("Falha ao obter o engine com RLS para o admin.")
             return _get_empty_consolidated_data()
-
+            
+        # Resto da função permanece igual...
         # 1. Carrega a tabela de unidades
         units_df = pd.read_sql('SELECT * FROM public.unidades', engine_with_rls)
         if units_df.empty:

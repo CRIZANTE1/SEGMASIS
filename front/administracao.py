@@ -166,6 +166,53 @@ def handle_delete_dialog(matrix_manager):
                     st.error("Falha ao remover.")
         confirm_dialog()
 
+from datetime import datetime, timedelta
+
+def show_access_request_management(matrix_manager):
+    """Gerencia solicitações de acesso pendentes."""
+    st.header(" 📬 Solicitações de Acesso Pendentes")
+    
+    pending_requests = matrix_manager.get_pending_access_requests()
+    if pending_requests.empty:
+        st.info("Não há solicitações de acesso pendentes.")
+        return
+        
+    for _, request in pending_requests.iterrows():
+        with st.container(border=True):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"**Nome:** {request['nome_usuario']}")
+                st.markdown(f"**E-mail:** {request['email_usuario']}")
+                if request.get('mensagem'):
+                    st.markdown(f"**Mensagem:** {request['mensagem']}")
+                st.caption(f"Solicitação enviada em: {request.get('created_at', 'N/A')}")
+            
+            with col2:
+                if st.button("✅ Aprovar", key=f"approve_{request['id']}"):
+                    # Lógica para adicionar usuário com acesso básico
+                    user_data = {
+                        "email": request['email_usuario'],
+                        "nome": request['nome_usuario'],
+                        "role": "viewer",  # Acesso básico
+                        "unidade_associada": "*",  # Pode ser modificado pelo admin depois
+                        "plano": "pro",
+                        "status_assinatura": "trial",
+                        "data_fim_trial": (datetime.now() + timedelta(days=30)).date().isoformat()
+                    }
+                    
+                    if matrix_manager.add_user(user_data):
+                        # Atualiza o status da solicitação
+                        matrix_manager.update_access_request_status(request['id'], "Aprovado")
+                        st.toast("✅ Usuário aprovado com sucesso!", icon="✅")
+                        st.rerun()
+                    else:
+                        st.error("Erro ao adicionar usuário. Verifique se o e-mail já existe.")
+                
+                if st.button("❌ Rejeitar", key=f"reject_{request['id']}"):
+                    if matrix_manager.update_access_request_status(request['id'], "Rejeitado"):
+                        st.toast("Solicitação rejeitada", icon="✅")
+                        st.rerun()
+
 def show_super_admin_view():
     st.title("👑 Painel do Super Administrador")
     matrix_manager = GlobalMatrixManager()
@@ -192,7 +239,6 @@ def show_super_admin_view():
             st.error("Não foi possível verificar a identidade do administrador.")
     
     with tab_requests:
-        from .administracao import show_access_request_management
         show_access_request_management(matrix_manager)
 
     with tab_users:
