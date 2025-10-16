@@ -428,90 +428,116 @@ class EmployeeManager:
                 logger.debug(f"Atributo '_trainings_by_employee' não encontrado.")
                 return pd.DataFrame()
 
-            training_docs = self._trainings_by_employee.get_group(str(employee_id)).copy()
-            if training_docs.empty: 
+            # ✅ CORREÇÃO: Validar se o grupo existe antes de usar .copy()
+            try:
+                training_docs = self._trainings_by_employee.get_group(str(employee_id))
+                if training_docs is None or training_docs.empty:
+                    return pd.DataFrame()
+                training_docs = training_docs.copy()
+            except KeyError:
+                return pd.DataFrame()
+
+            if training_docs.empty:
                 return pd.DataFrame()
             
             training_docs.dropna(subset=['data'], inplace=True)
             if training_docs.empty: 
                 return pd.DataFrame()
 
-            # Normalização de colunas
+            # ✅ CORREÇÃO: Normalização de colunas com validação
             for col in ['norma', 'modulo', 'tipo_treinamento']:
-                if col not in training_docs.columns: 
+                if col not in training_docs.columns:
                     training_docs[col] = 'N/A'
                 training_docs[col] = training_docs[col].fillna('N/A')
+
+            # ✅ CORREÇÃO: Verificar existência das colunas antes de usar
+            if 'norma' not in training_docs.columns:
+                logger.error("Coluna 'norma' não encontrada no DataFrame de treinamentos")
+                return pd.DataFrame()
+
+            if 'modulo' not in training_docs.columns:
+                training_docs['modulo'] = 'N/A'
+
+            training_docs['norma_normalizada'] = training_docs['norma'].fillna('').astype(str).str.strip().str.upper()
+            training_docs['modulo_normalizado'] = training_docs['modulo'].fillna('N/A').astype(str).str.strip().str.title()
             
-            training_docs['norma_normalizada'] = training_docs['norma'].str.strip().str.upper()
-            training_docs['modulo_normalizado'] = training_docs['modulo'].str.strip().str.title()
-            
-            # ✅ FUNÇÃO MELHORADA
+            # ✅ CORREÇÃO: Função com try-except para segurança
             def normalizar_modulo_especial(row):
-                norma = row['norma_normalizada']
-                modulo = row['modulo_normalizado']
-                
-                # Dicionário de mapeamentos
-                normalizacao_map = {
-                    'NR-10': {
-                        'sep_keywords': ['SEP'],
-                        'sep_value': 'SEP',
-                        'default': 'Básico'
-                    },
-                    'NR-33': {
-                        'supervisor': ['SUPERVISOR'],
-                        'trabalhador': ['TRABALHADOR', 'AUTORIZADO'],
-                        'values': {
-                            'supervisor': 'Supervisor',
-                            'trabalhador': 'Trabalhador Autorizado'
-                        }
-                    },
-                    'NR-20': {
-                        'validos': ['Básico', 'Intermediário', 'Avançado I', 'Avançado II']
-                    },
-                    'PERMISSÃO': {
-                        'emitente': ['EMITENTE'],
-                        'requisitante': ['REQUISITANTE'],
-                        'values': {
-                            'emitente': 'Emitente',
-                            'requisitante': 'Requisitante'
+                try:
+                    # ✅ CORREÇÃO: Validação antes de usar
+                    norma = str(row.get('norma_normalizada', '')).strip().upper()
+                    modulo = str(row.get('modulo_normalizado', '')).strip().title()
+
+                    # Se algum valor for vazio/inválido, retorna o módulo como está
+                    if not norma or norma in ['NAN', 'NONE', '']:
+                        return modulo if modulo not in ['Nan', 'N/A', ''] else 'N/A'
+
+                    # Dicionário de mapeamentos
+                    normalizacao_map = {
+                        'NR-10': {
+                            'sep_keywords': ['SEP'],
+                            'sep_value': 'SEP',
+                            'default': 'Básico'
+                        },
+                        'NR-33': {
+                            'supervisor': ['SUPERVISOR'],
+                            'trabalhador': ['TRABALHADOR', 'AUTORIZADO'],
+                            'values': {
+                                'supervisor': 'Supervisor',
+                                'trabalhador': 'Trabalhador Autorizado'
+                            }
+                        },
+                        'NR-20': {
+                            'validos': ['Básico', 'Intermediário', 'Avançado I', 'Avançado II']
+                        },
+                        'PERMISSÃO': {
+                            'emitente': ['EMITENTE'],
+                            'requisitante': ['REQUISITANTE'],
+                            'values': {
+                                'emitente': 'Emitente',
+                                'requisitante': 'Requisitante'
+                            }
                         }
                     }
-                }
-                
-                # NR-10
-                if 'NR-10' in norma:
-                    if any(kw in norma or kw in modulo.upper() for kw in normalizacao_map['NR-10']['sep_keywords']):
-                        return normalizacao_map['NR-10']['sep_value']
-                    elif modulo in ['N/A', 'Nan', '']:
-                        return normalizacao_map['NR-10']['default']
+
+                    # NR-10
+                    if 'NR-10' in norma:
+                        if any(kw in norma or kw in modulo.upper() for kw in normalizacao_map['NR-10']['sep_keywords']):
+                            return normalizacao_map['NR-10']['sep_value']
+                        elif modulo in ['N/A', 'Nan', '']:
+                            return normalizacao_map['NR-10']['default']
+                        return modulo
+
+                    # NR-33
+                    if 'NR-33' in norma:
+                        modulo_upper = modulo.upper()
+                        if any(kw in modulo_upper for kw in normalizacao_map['NR-33']['supervisor']):
+                            return normalizacao_map['NR-33']['values']['supervisor']
+                        elif any(kw in modulo_upper for kw in normalizacao_map['NR-33']['trabalhador']):
+                            return normalizacao_map['NR-33']['values']['trabalhador']
+                        return modulo
+
+                    # NR-20
+                    if 'NR-20' in norma:
+                        for valido in normalizacao_map['NR-20']['validos']:
+                            if valido.upper() in modulo.upper():
+                                return valido
+                        return modulo
+
+                    # Permissão de Trabalho
+                    if 'PERMISSÃO' in norma or 'PT' in norma:
+                        modulo_upper = modulo.upper()
+                        if any(kw in modulo_upper for kw in normalizacao_map['PERMISSÃO']['emitente']):
+                            return normalizacao_map['PERMISSÃO']['values']['emitente']
+                        elif any(kw in modulo_upper for kw in normalizacao_map['PERMISSÃO']['requisitante']):
+                            return normalizacao_map['PERMISSÃO']['values']['requisitante']
+                        return modulo
+
                     return modulo
-                
-                # NR-33
-                if 'NR-33' in norma:
-                    modulo_upper = modulo.upper()
-                    if any(kw in modulo_upper for kw in normalizacao_map['NR-33']['supervisor']):
-                        return normalizacao_map['NR-33']['values']['supervisor']
-                    elif any(kw in modulo_upper for kw in normalizacao_map['NR-33']['trabalhador']):
-                        return normalizacao_map['NR-33']['values']['trabalhador']
-                    return modulo
-                
-                # NR-20
-                if 'NR-20' in norma:
-                    for valido in normalizacao_map['NR-20']['validos']:
-                        if valido.upper() in modulo.upper():
-                            return valido
-                    return modulo
-                
-                # Permissão de Trabalho
-                if 'PERMISSÃO' in norma or 'PT' in norma:
-                    modulo_upper = modulo.upper()
-                    if any(kw in modulo_upper for kw in normalizacao_map['PERMISSÃO']['emitente']):
-                        return normalizacao_map['PERMISSÃO']['values']['emitente']
-                    elif any(kw in modulo_upper for kw in normalizacao_map['PERMISSÃO']['requisitante']):
-                        return normalizacao_map['PERMISSÃO']['values']['requisitante']
-                    return modulo
-                
-                return modulo
+
+                except Exception as e:
+                    logger.error(f"Erro ao normalizar módulo: {e}")
+                    return 'N/A'
             
             training_docs['modulo_final'] = training_docs.apply(normalizar_modulo_especial, axis=1)
             training_docs['data_dt'] = pd.to_datetime(training_docs['data'], errors='coerce')
@@ -575,10 +601,11 @@ class EmployeeManager:
             norma = training_data.get('norma')
             data = training_data.get('data')
             vencimento = training_data.get('vencimento')
-            
+
+            # Validações básicas
             if not all([norma, isinstance(data, (date, datetime)), isinstance(vencimento, (date, datetime))]):
                 return False, "❌ Faltam campos obrigatórios ou datas inválidas"
-            
+
             hoje = date.today()
             data_date = data.date() if isinstance(data, datetime) else data
             if data_date > hoje:
@@ -587,15 +614,41 @@ class EmployeeManager:
             venc_date = vencimento.date() if isinstance(vencimento, datetime) else vencimento
             if venc_date <= data_date:
                 return False, f"❌ Vencimento deve ser após a data de realização"
-            
-            is_valid, msg = self.validar_treinamento(
-                norma, training_data.get('modulo', 'N/A'),
-                training_data.get('tipo_treinamento', 'formação'),
-                training_data.get('carga_horaria', 0)
+
+            # ✅ CORREÇÃO: Validar carga horária usando NRRulesManager
+            carga_horaria = training_data.get('carga_horaria', 0)
+            modulo = training_data.get('modulo', 'N/A')
+            tipo_treinamento = training_data.get('tipo_treinamento', 'formação')
+
+            # Busca a regra no banco
+            norma_padronizada = self._padronizar_norma(norma)
+            rule = self.nr_rules_manager.find_training_rule(
+                norma_nome=norma_padronizada,
+                modulo_nome=modulo
             )
-            if not is_valid:
-                return False, msg
-            
+
+            if rule is None:
+                # Se não há regra, permite (backward compatibility)
+                logger.warning(f"Nenhuma regra encontrada para '{norma_padronizada}'. Aprovando.")
+                return True, "✅ Sem regra específica - carga horária aceita"
+
+            # Determina carga horária mínima
+            if tipo_treinamento == 'formação':
+                ch_minima = rule.get('carga_horaria_minima_horas')
+            else:  # reciclagem
+                ch_minima = rule.get('reciclagem_carga_horaria_horas')
+
+            # Se ch_minima é NaN/None, aceita qualquer valor > 0
+            if pd.isna(ch_minima):
+                if carga_horaria <= 0:
+                    return False, "❌ Carga horária deve ser maior que zero"
+                return True, "✅ Carga horária definida pelo empregador"
+
+            # Se há mínimo definido, valida
+            if carga_horaria < ch_minima:
+                return False, f"❌ C.H. mínima para {tipo_treinamento} é {int(ch_minima)}h (fornecido: {carga_horaria}h)"
+
+            # Verifica duplicatas por hash
             arquivo_hash = training_data.get('arquivo_hash')
             funcionario_id = str(training_data.get('funcionario_id'))
             if arquivo_hash and verificar_hash_seguro(self.training_df, 'arquivo_hash'):
@@ -605,8 +658,9 @@ class EmployeeManager:
                 ]
                 if not duplicata.empty:
                     return False, "❌ Este PDF já foi cadastrado anteriormente"
-            
+
             return True, "✅ Validação aprovada"
+
         except Exception as e:
             logger.error(f"Erro crítico na validação: {e}", exc_info=True)
             return False, f"❌ Erro na validação: {str(e)}"
@@ -635,10 +689,15 @@ class EmployeeManager:
 
         # 2. Se não for um caso especial, busca pelo padrão genérico NR-XX.
         #    Isso garante que "NR-10 Básico" ou "NR 10" se tornem "NR-10".
+        # ✅ CORREÇÃO: Validar match.group antes de usar
         match = re.search(r'NR\s?-?(\d+)', norma_upper)
-        if match:
-            # Formata o número com dois dígitos, ex: NR-05, NR-10
-            return f"NR-{int(match.group(1)):02d}"
+        if match and match.group(1):
+            try:
+                nr_number = int(match.group(1))
+                return f"NR-{nr_number:02d}"
+            except (ValueError, TypeError) as e:
+                logger.error(f"Erro ao converter NR number: {match.group(1)} - {e}")
+                return norma_upper
 
         # 3. Se nenhuma regra for aplicada, retorna o texto original em maiúsculas.
         return norma_upper

@@ -110,8 +110,26 @@ class MatrixManager:
             self._matrix_df = pd.DataFrame(columns=self.columns_matrix)
 
     def add_function(self, name: str, description: str) -> tuple[str | None, str]:
-        # ... validações ...
-        
+        # ✅ CORREÇÃO: Validações de entrada
+        if not name or not isinstance(name, str) or not name.strip():
+            return None, "Nome da função não pode ser vazio"
+
+        name = name.strip()
+        description = str(description).strip() if description else ""
+
+        # ✅ CORREÇÃO: Verifica duplicatas
+        if not self.functions_df.empty:
+            existing = self.functions_df[
+                self.functions_df['nome_funcao'].str.lower() == name.lower()
+            ]
+            if not existing.empty:
+                return None, f"Função '{name}' já existe"
+
+        new_data = {
+            'nome_funcao': name,
+            'descricao': description
+        }
+
         try:
             # ✅ CORREÇÃO: insert_row retorna apenas string do ID
             function_id = self.supabase_ops.insert_row("funcoes", new_data)
@@ -120,9 +138,9 @@ class MatrixManager:
                 st.cache_data.clear()
                 logger.info(f"Função '{name}' adicionada com sucesso.")
                 return function_id, "Função adicionada com sucesso."
-                
+
             return None, "Falha ao adicionar função."
-            
+
         except Exception as e:
             logger.error(f"Erro ao adicionar função: {e}")
             return None, f"Erro ao adicionar função: {str(e)}"

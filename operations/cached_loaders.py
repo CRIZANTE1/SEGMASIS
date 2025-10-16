@@ -62,10 +62,16 @@ def load_all_units_consolidated_data(admin_email: str = None) -> dict:
         if not engine_with_rls:
             logger.error("Falha ao obter o engine com RLS para o admin.")
             return _get_empty_consolidated_data()
-            
+
         # Resto da função permanece igual...
         # 1. Carrega a tabela de unidades
-        units_df = pd.read_sql('SELECT * FROM public.unidades', engine_with_rls)
+        # ✅ CORREÇÃO: Adicionar try-except para capturar erros de leitura
+        try:
+            units_df = pd.read_sql('SELECT * FROM public.unidades', engine_with_rls)
+        except Exception as e:
+            logger.error(f"Erro ao ler tabela unidades: {e}")
+            return _get_empty_consolidated_data()
+
         if units_df.empty:
             logger.warning("Nenhuma unidade encontrada na tabela 'unidades'.")
             return _get_empty_consolidated_data()
@@ -76,10 +82,18 @@ def load_all_units_consolidated_data(admin_email: str = None) -> dict:
         # 2. Carrega todas as tabelas de dados usando a conexão com RLS.
         all_data_tables = {
             "companies": "empresas", "employees": "funcionarios", "asos": "asos",
-            "trainings": "treinamentos", "epis": "fichas_epi", 
+            "trainings": "treinamentos", "epis": "fichas_epi",
             "company_docs": "documentos_empresa", "action_plan": "plano_acao"
         }
-        all_data = {key: pd.read_sql(f'SELECT * FROM public.{table_name}', engine_with_rls) for key, table_name in all_data_tables.items()}
+
+        # ✅ CORREÇÃO: Adicionar try-except individual para cada tabela
+        all_data = {}
+        for key, table_name in all_data_tables.items():
+            try:
+                all_data[key] = pd.read_sql(f'SELECT * FROM public.{table_name}', engine_with_rls)
+            except Exception as e:
+                logger.error(f"Erro ao ler tabela {table_name}: {e}")
+                all_data[key] = pd.DataFrame()
 
         consolidated_data = {}
         # 3. Junta os nomes das unidades
