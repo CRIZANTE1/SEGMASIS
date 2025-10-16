@@ -461,7 +461,7 @@ def show_dashboard_page():
                 st.info("💡 **Modo Manual Ativo** | Upgrade para Premium IA para análise automática de PDFs")
             
             # ========== MODO IA ==========            
-            if entry_mode == "🤖 Upload com IA (Automático)":
+            if "Upload com IA" in entry_mode:
                 st.file_uploader(
                     "📎 Anexar Documento (PDF) - A IA extrairá os dados automaticamente", 
                     type=['pdf'], 
@@ -732,7 +732,7 @@ def show_dashboard_page():
                     st.info("💡 **Modo Manual Ativo** | Upgrade para Premium IA para análise automática")
                 
                 # ========== MODO IA ==========                
-                if entry_mode_aso == "🤖 Upload com IA (Automático)":
+                if "Upload com IA" in entry_mode_aso:
                     st.file_uploader(
                         "📎 Anexar ASO (PDF) - A IA extrairá os dados automaticamente",
                         type=['pdf'],
@@ -1072,7 +1072,7 @@ def show_dashboard_page():
                     st.info("💡 **Modo Manual Ativo** | Upgrade para Premium IA para análise automática de certificados.")
                 
                 # --- MODO IA ---
-                if entry_mode_training == "🤖 Upload com IA (Automático)":
+                if "Upload com IA" in entry_mode_training:
                     st.file_uploader(
                         "📎 Anexar Certificado (PDF)", 
                         type=['pdf'], 
