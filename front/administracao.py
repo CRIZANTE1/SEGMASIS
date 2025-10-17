@@ -447,16 +447,17 @@ def show_access_request_management(matrix_manager):
 def show_super_admin_view():
     st.title("👑 Painel do Super Administrador")
     matrix_manager = GlobalMatrixManager()
-    
+
     # Gerenciador de solicitações de acesso
     pending_requests = matrix_manager.get_pending_access_requests()
     pending_count = len(pending_requests)
-    
-    tab_dashboard, tab_requests, tab_users, tab_provision, tab_rules, tab_audit = st.tabs([
+
+    tab_dashboard, tab_requests, tab_users, tab_provision, tab_matrix, tab_rules, tab_audit = st.tabs([
         f"📊 Dashboard Global",
         f"📬 Solicitações de Acesso ({pending_count})" if pending_count > 0 else "📬 Solicitações de Acesso",
         "👤 Gerenciar Usuários",
         "🚀 Provisionar Cliente",
+        "🏗️ Matriz Global",
         "📜 Regras de Conformidade",
         "🛡️ Logs de Auditoria"
     ])
@@ -492,8 +493,18 @@ def show_super_admin_view():
                         unit_data = {'nome_unidade': new_unit_name, 'email_contato': new_unit_email, 'folder_id': ''}
                         if matrix_manager.add_unit(unit_data):
                             st.success(f"✅ Unidade '{new_unit_name}' registrada!")
+
+                            # Aplicar automaticamente a matriz global para a nova unidade
+                            new_unit_info = matrix_manager.get_unit_info_by_name(new_unit_name)
+                            if new_unit_info:
+                                with st.spinner("Aplicando matriz global automaticamente..."):
+                                    success, message = matrix_manager.auto_apply_global_matrix_on_unit_creation(str(new_unit_info['id']))
+                                    if success:
+                                        st.success(f"✅ {message}")
+                                    else:
+                                        st.warning(f"Aviso na aplicação da matriz: {message}")
+
                             if is_single_tenant:
-                                new_unit_info = matrix_manager.get_unit_info_by_name(new_unit_name)
                                 if new_unit_info:
                                     from operations.supabase_operations import SupabaseOperations
                                     unit_ops = SupabaseOperations(unit_id=str(new_unit_info['id']))
@@ -506,6 +517,55 @@ def show_super_admin_view():
                             st.info("Provisionamento concluído.")
                         else:
                             st.error("Falha ao registrar a unidade. Verifique se o nome já existe.")
+
+    with tab_matrix:
+        st.header("🏗️ Gerenciamento da Matriz Global de Treinamentos")
+        st.info("""
+        Esta área permite gerenciar a matriz global de treinamentos que serve como base para todas as unidades.
+        - **Matriz Global:** Funções e treinamentos base aplicáveis a novas unidades
+        - **Aplicação em Massa:** Propagar mudanças para unidades existentes
+        """)
+
+        # Visualizar Matriz Global
+        try:
+            from operations.training_matrix_manager import MatrixManager as TrainingMatrixManager
+            global_matrix_manager = TrainingMatrixManager("global")
+            global_functions = global_matrix_manager.get_all_functions_global()
+
+            if global_functions:
+                st.subheader("📋 Funções da Matriz Global")
+                functions_df = pd.DataFrame(global_functions)
+                st.dataframe(functions_df[['nome_funcao', 'descricao']], use_container_width=True, hide_index=True)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.subheader("🚀 Aplicação em Massa")
+                    all_units = matrix_manager.get_all_units()
+                    if st.button("🔄 Aplicar Matriz Global a Todas as Unidades", type="primary", use_container_width=True):
+                        with st.spinner("Aplicando matriz global..."):
+                            success, message = matrix_manager.bulk_apply_global_matrix_to_all_units()
+                            if success:
+                                st.success(message)
+                            else:
+                                st.error(message)
+
+                with col2:
+                    st.subheader("📍 Aplicação Individual")
+                    unit_names = [u['nome_unidade'] for u in all_units]
+                    selected_unit_name = st.selectbox("Selecionar unidade para aplicar matriz:", options=[''] + unit_names)
+                    if selected_unit_name and st.button(f"🎯 Aplicar para {selected_unit_name}", use_container_width=True):
+                        selected_unit = next(u for u in all_units if u['nome_unidade'] == selected_unit_name)
+                        with st.spinner(f"Aplicando matriz para {selected_unit_name}..."):
+                            success, message = matrix_manager.bulk_apply_global_matrix_to_unit(selected_unit['id'])
+                            if success:
+                                st.success(message)
+                            else:
+                                st.error(message)
+            else:
+                st.info("Nenhuma função cadastrada na matriz global ainda.")
+
+        except Exception as e:
+            st.error(f"Erro ao carregar matriz global: {e}")
 
     with tab_rules:
         show_compliance_rules_management(matrix_manager)

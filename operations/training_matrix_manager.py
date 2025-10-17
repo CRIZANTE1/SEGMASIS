@@ -146,8 +146,28 @@ class MatrixManager:
             return None, f"Erro ao adicionar função: {str(e)}"
 
     def add_training_to_function(self, function_id: str, required_norm: str) -> tuple[str | None, str]:
-        # ... validações ...
-        
+        # ✅ CORREÇÃO: Validações de entrada
+        if not function_id or not required_norm:
+            return None, "ID da função e norma obrigatória são necessários"
+
+        required_norm = str(required_norm).strip()
+        if not required_norm:
+            return None, "Norma obrigatória não pode ser vazia"
+
+        # ✅ CORREÇÃO: Verifica se já existe mapeamento
+        if not self.matrix_df.empty:
+            existing = self.matrix_df[
+                (self.matrix_df['id_funcao'] == str(function_id)) &
+                (self.matrix_df['norma_obrigatoria'].str.lower() == required_norm.lower())
+            ]
+            if not existing.empty:
+                return None, f"Treinamento '{required_norm}' já mapeado para esta função"
+
+        new_data = {
+            'id_funcao': str(function_id),
+            'norma_obrigatoria': required_norm
+        }
+
         try:
             # ✅ CORREÇÃO: insert_row retorna apenas string do ID
             mapping_id = self.supabase_ops.insert_row("matriz_treinamentos", new_data)
@@ -156,9 +176,9 @@ class MatrixManager:
                 st.cache_data.clear()
                 logger.info(f"Treinamento '{required_norm}' mapeado para função {function_id}")
                 return mapping_id, "Treinamento mapeado com sucesso."
-                
+
             return None, "Falha ao mapear treinamento."
-            
+
         except Exception as e:
             logger.error(f"Erro ao mapear treinamento: {e}")
             return None, f"Erro ao mapear treinamento: {str(e)}"
@@ -389,18 +409,214 @@ class MatrixManager:
             logger.error(f"Erro no fuzzy matching: {e}", exc_info=True)
             return None
         
+
+    # ==================== GLOBAL MATRIX FUNCTIONS ====================
+
+    def get_all_functions_global(self) -> List[dict]:
+        """
+        Retorna todas as funções da matriz global (unit_id = NULL).
+
+        Returns:
+            Lista de dicionários com funções globais
+        """
+        try:
+            # Usar operações globais (unit_id=None)
+            global_supabase_ops = SupabaseOperations(unit_id=None)
+
+            # Buscar funções da tabela 'funcoes' onde unit_id é NULL ou vazio
+            functions_df = global_supabase_ops.get_table_data("funcoes")
+
+            # Filtrar para unit_id NULL/Vazio (matriz global)
+            if not functions_df.empty:
+                # Verificar se há coluna unit_id, senão assumir que tudo é global
+                if 'unit_id' in functions_df.columns:
+                    global_functions = functions_df[functions_df['unit_id'].isnull() | (functions_df['unit_id'] == '')]
+                else:
+                    global_functions = functions_df
+
+                return global_functions.to_dict('records')
+            else:
+                return []
+        except Exception as e:
+            logger.error(f"Erro ao buscar funções globais: {e}")
+            return []
+
+    def import_function_from_global(self, global_function_id: str, target_unit_id: str = None) -> Tuple[bool, str]:
+        """
+        Importa uma função da matriz global para uma unidade específica.
+
+        Args:
+            global_function_id: ID da função na matriz global
+            target_unit_id: ID da unidade alvo (usa self.unit_id se None)
+
+        Returns:
+            tuple: (sucesso, mensagem)
+        """
+        if not global_function_id:
+            return False, "ID da função global não informado"
+
+        target_unit = target_unit_id or self.unit_id
+        if not target_unit:
+            return False, "ID da unidade alvo não informado"
+
+        try:
+            # Verificar se a função global existe
+            global_supabase_ops = SupabaseOperations(unit_id=None)
+            function_data = global_supabase_ops.get_by_id("funcoes", global_function_id)
+
+            if function_data.empty:
+                return False, "Função global não encontrada"
+
+            function_record = function_data.iloc[0]
+
+            # Verificar se já existe na unidade alvo
+            if not self.functions_df.empty:
+                existing = self.functions_df[
+                    self.functions_df['nome_funcao'].str.lower() == function_record['nome_funcao'].lower()
+                ]
+                if not existing.empty:
+                    return False, f"Função '{function_record['nome_funcao']}' já existe na unidade"
+
+            # Preparar dados para importação (adicionar unit_id se necessário)
+            import_data = {
+                'nome_funcao': function_record['nome_funcao'],
+                'descricao': function_record.get('descricao', ''),
+                'unit_id': target_unit  # Adicionar referência à unidade
+            }
+
+            # Inserir na unidade alvo
+            function_id = self.supabase_ops.insert_row("funcoes", import_data)
+            if function_id:
+                self._functions_df = None  # Forçar recarregamento
+                logger.info(f"Função '{function_record['nome_funcao']}' importada para unidade {target_unit}")
+                return True, f"Função '{function_record['nome_funcao']}' importada com sucesso"
+
+            return False, "Falha ao importar função"
+
+        except Exception as e:
+            logger.error(f"Erro ao importar função global: {e}")
+            return False, f"Erro ao importar função: {str(e)}"
+
+    def import_function_matrix_from_global(self, global_function_id: str, target_function_id: str) -> Tuple[bool, str]:
+        """
+        Importa todos os treinamentos de uma função da matriz global.
+
+        Args:
+            global_function_id: ID da função na matriz global
+            target_function_id: ID da função na unidade alvo
+
+        Returns:
+            tuple: (sucesso, mensagem)
+        """
+        if not global_function_id or not target_function_id:
+            return False, "IDs das funções não informados"
+
+        try:
+            # Buscar treinamentos da função global
+            global_supabase_ops = SupabaseOperations(unit_id=None)
+            global_matrix_df = global_supabase_ops.get_table_data("matriz_treinamentos")
+
+            if global_matrix_df.empty:
+                return False, "Nenhum treinamento encontrado na matriz global"
+
+            # Filtrar treinamentos da função global
+            global_trainings = global_matrix_df[global_matrix_df['id_funcao'] == global_function_id]
+
+            if global_trainings.empty:
+                return False, "Nenhum treinamento encontrado para esta função na matriz global"
+
+            # Importar treinamentos
+            imported_count = 0
+
+            for _, training in global_trainings.iterrows():
+                norma_obrigatoria = training.get('norma_obrigatoria')
+                if not norma_obrigatoria:
+                    continue
+
+                # Verificar se já existe na unidade
+                if not self.matrix_df.empty:
+                    existing = self.matrix_df[
+                        (self.matrix_df['id_funcao'] == target_function_id) &
+                        (self.matrix_df['norma_obrigatoria'] == norma_obrigatoria)
+                    ]
+                    if not existing.empty:
+                        logger.debug(f"Treinamento '{norma_obrigatoria}' já existe para esta função")
+                        continue
+
+                # Adicionar treinamento
+                mapping_data = {
+                    'id_funcao': target_function_id,
+                    'norma_obrigatoria': norma_obrigatoria
+                }
+
+                mapping_id = self.supabase_ops.insert_row("matriz_treinamentos", mapping_data)
+                if mapping_id:
+                    imported_count += 1
+                    logger.debug(f"Treinamento '{norma_obrigatoria}' importado")
+                else:
+                    logger.warning(f"Falha ao importar treinamento '{norma_obrigatoria}'")
+
+            if imported_count > 0:
+                self._matrix_df = None  # Forçar recarregamento
+                return True, f"{imported_count} treinamentos importados com sucesso"
+            else:
+                return False, "Nenhum treinamento novo foi importado (já existem)"
+
+        except Exception as e:
+            logger.error(f"Erro ao importar treinamentos: {e}")
+            return False, f"Erro ao importar treinamentos: {str(e)}"
+
+    def find_global_function_matches(self, employee_cargo: str, score_cutoff: int = 80) -> List[Tuple[dict, int]]:
+        """
+        Encontra funções similares na matriz global usando fuzzy matching.
+
+        Args:
+            employee_cargo: Nome do cargo/função do funcionário
+            score_cutoff: Score mínimo para considerar match
+
+        Returns:
+            Lista de tuplas (função_global, score) ordenadas por score
+        """
+        if not employee_cargo or not isinstance(employee_cargo, str):
+            return []
+
+        employee_cargo = employee_cargo.strip()
+        if not employee_cargo:
+            return []
+
+        try:
+            global_functions = self.get_all_functions_global()
+            if not global_functions:
+                return []
+
+            function_names = [f['nome_funcao'] for f in global_functions]
+            best_matches = process.extractBests(employee_cargo, function_names, score_cutoff=score_cutoff)
+
+            results = []
+            for match_name, score in best_matches:
+                # Encontrar o objeto completo da função
+                matching_function = next((f for f in global_functions if f['nome_funcao'] == match_name), None)
+                if matching_function:
+                    results.append((matching_function, score))
+
+            return sorted(results, key=lambda x: x[1], reverse=True)
+
+        except Exception as e:
+            logger.error(f"Erro no fuzzy matching global: {e}")
+            return []
+
     def get_training_recommendations_for_function(
-        self, 
-        function_name: str, 
+        self,
+        function_name: str,
         nr_analyzer
     ) -> Tuple[Optional[List[dict]], str]:
         """
         Obtém recomendações de treinamentos usando IA.
-        
+
         Args:
             function_name: Nome da função
             nr_analyzer: Instância do NRAnalyzer para busca semântica
-            
+
         Returns:
             tuple: (lista de recomendações, mensagem de status)
         """

@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import logging
+from typing import Tuple
 from operations.supabase_operations import SupabaseOperations
 from fuzzywuzzy import process
 from operations.audit_logger import log_action
@@ -146,3 +147,142 @@ class MatrixManager:
             load_matrix_data.clear()
             self._load_data_from_cache()
         return result is not None
+
+    # ==================== GLOBAL MATRIX MANAGEMENT ====================
+
+    def bulk_apply_global_matrix_to_unit(self, unit_id: str) -> Tuple[bool, str]:
+        """
+        Aplica a matriz global completa a uma unidade específica.
+
+        Args:
+            unit_id: ID da unidade alvo
+
+        Returns:
+            tuple: (sucesso, mensagem)
+        """
+        if not unit_id:
+            return False, "ID da unidade não informado"
+
+        try:
+            from operations.training_matrix_manager import MatrixManager as TrainingMatrixManager
+            global_matrix_manager = TrainingMatrixManager("global")
+
+            # Buscar todas as funções globais
+            global_functions = global_matrix_manager.get_all_functions_global()
+
+            if not global_functions:
+                return False, "Nenhuma função encontrada na matriz global"
+
+            success_count = 0
+            error_messages = []
+
+            # Para cada função global, importar para a unidade
+            for global_function in global_functions:
+                try:
+                    # Importar função
+                    success, message = global_matrix_manager.import_function_from_global(
+                        global_function['id'], unit_id
+                    )
+
+                    if success:
+                        # Importar treinamentos da função
+                        # Primeiro encontrar o ID da função recém-importada na unidade
+                        unit_matrix_manager = TrainingMatrixManager(unit_id)
+                        unit_functions = unit_matrix_manager.functions_df
+
+                        if not unit_functions.empty:
+                            matching_function = unit_functions[
+                                unit_functions['nome_funcao'].str.lower() == global_function['nome_funcao'].lower()
+                            ]
+                            if not matching_function.empty:
+                                target_function_id = matching_function.iloc[0]['id']
+
+                                # Importar treinamentos
+                                train_success, train_message = global_matrix_manager.import_function_matrix_from_global(
+                                    global_function['id'], target_function_id
+                                )
+
+                                if train_success:
+                                    success_count += 1
+                                else:
+                                    error_messages.append(f"Função '{global_function['nome_funcao']}': {train_message}")
+                                    success_count += 1  # Função importada mesmo sem treinamentos
+                            else:
+                                error_messages.append(f"Função '{global_function['nome_funcao']}' importada mas não encontrada na unidade")
+                        else:
+                            error_messages.append(f"Função '{global_function['nome_funcao']}' importada mas lista vazia na unidade")
+                    else:
+                        error_messages.append(f"Falha ao importar função '{global_function['nome_funcao']}': {message}")
+
+                except Exception as e:
+                    error_messages.append(f"Erro ao processar função '{global_function['nome_funcao']}': {str(e)}")
+
+            # Resultado final
+            if success_count > 0:
+                message = f"Matriz aplicada com sucesso para {success_count} funções"
+                if error_messages:
+                    message += f". Avisos: {'; '.join(error_messages[:3])}"  # Limitar mensagens de erro
+                return True, message
+            else:
+                return False, f"Falha ao aplicar matriz. Erros: {'; '.join(error_messages)}"
+
+        except Exception as e:
+            return False, f"Erro crítico ao aplicar matriz global: {str(e)}"
+
+    def bulk_apply_global_matrix_to_all_units(self) -> Tuple[bool, str]:
+        """
+        Aplica a matriz global a todas as unidades existentes.
+
+        Returns:
+            tuple: (sucesso, mensagem)
+        """
+        try:
+            all_units = self.get_all_units()
+            if not all_units:
+                return False, "Nenhuma unidade encontrada"
+
+            success_count = 0
+            error_messages = []
+
+            for unit in all_units:
+                try:
+                    success, message = self.bulk_apply_global_matrix_to_unit(unit['id'])
+                    if success:
+                        success_count += 1
+                    else:
+                        error_messages.append(f"Unidade '{unit['nome_unidade']}': {message}")
+                except Exception as e:
+                    error_messages.append(f"Erro na unidade '{unit['nome_unidade']}': {str(e)}")
+
+            if success_count > 0:
+                message = f"Matriz aplicada com sucesso para {success_count}/{len(all_units)} unidades"
+                if error_messages:
+                    message += f". Erros em algumas unidades: {'; '.join(error_messages[:2])}"
+                return True, message
+            else:
+                return False, f"Falha em todas as unidades. Erros: {'; '.join(error_messages)}"
+
+        except Exception as e:
+            return False, f"Erro crítico ao aplicar matriz para todas as unidades: {str(e)}"
+
+    def auto_apply_global_matrix_on_unit_creation(self, unit_id: str) -> Tuple[bool, str]:
+        """
+        Aplica automaticamente a matriz global durante a criação de uma nova unidade.
+
+        Args:
+            unit_id: ID da nova unidade
+
+        Returns:
+            tuple: (sucesso, mensagem)
+        """
+        if not unit_id:
+            return False, "ID da unidade não informado"
+
+        # Verificar se a unidade existe
+        unit_info = self.get_unit_info(unit_id)
+        if not unit_info:
+            return False, "Unidade não encontrada"
+
+        logger.info(f"Aplicando matriz global automaticamente para nova unidade: {unit_info['nome_unidade']}")
+
+        return self.bulk_apply_global_matrix_to_unit(unit_id)
