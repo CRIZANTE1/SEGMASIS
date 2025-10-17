@@ -132,6 +132,7 @@ STORAGE_BUCKETS = {
     'documentos': 'segma-sis-documentos',
     'fichas_epi': 'segma-sis-epi',
     'docs_empresa': 'segma-sis-docs-empresa',
+    'evidencias': 'evidencias',  # ✅ ADICIONAR
 }
 
 def get_bucket_name(doc_type: str) -> str:
@@ -141,5 +142,6 @@ def get_bucket_name(doc_type: str) -> str:
         'treinamento': STORAGE_BUCKETS['documentos'],
         'epi': STORAGE_BUCKETS['fichas_epi'],
         'doc_empresa': STORAGE_BUCKETS['docs_empresa'],
+        'evidencia': STORAGE_BUCKETS['evidencias'],  # ✅ ADICIONAR
     }
     return bucket_map.get(doc_type.lower(), STORAGE_BUCKETS['documentos'])

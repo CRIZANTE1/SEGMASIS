@@ -11,19 +11,21 @@ class ActionPlanManager:
         if not unit_id or not isinstance(unit_id, str) or unit_id.strip() in ['', 'None', 'none', 'null']:
             logger.error(f"ActionPlanManager inicializado com unit_id inválido: {unit_id}")
             raise ValueError("unit_id não pode ser vazio ou None")
-        
-        # Remove espaços em branco
+
         unit_id = unit_id.strip()
-        
+
         self.supabase_ops = SupabaseOperations(unit_id)
         self.unit_id = unit_id
-        # ... resto do código
-        
+
+        # ✅ ADICIONAR: Storage manager para upload de evidências
+        from managers.supabase_storage import SupabaseStorageManager
+        self.storage_manager = SupabaseStorageManager(unit_id)
+
         self.columns = [
-            'id', 'audit_run_id', 'id_empresa', 'id_documento_original', 
-            'id_funcionario', 'item_nao_conforme', 'referencia_normativa', 
-            'plano_de_acao', 'responsavel', 'prazo', 'status', 
-            'data_criacao', 'data_conclusao'
+            'id', 'audit_run_id', 'id_empresa', 'id_documento_original',
+            'id_funcionario', 'item_nao_conforme', 'referencia_normativa',
+            'plano_de_acao', 'responsavel', 'prazo', 'status',
+            'data_criacao', 'data_conclusao', 'evidencia_arquivo_id'  # ✅ ADICIONAR
         ]
         
         self.action_plan_df = pd.DataFrame()
@@ -164,3 +166,101 @@ class ActionPlanManager:
             logger.error(f"Erro ao atualizar item de ação: {e}", exc_info=True)
             st.error(f"Erro ao atualizar: {str(e)}")
             return False
+
+    def upload_evidencia(self, item_id: str, arquivo) -> tuple[bool, str]:
+        """
+        Faz upload de arquivo de evidência para um item do plano de ação.
+
+        Args:
+            item_id: ID do item do plano de ação
+            arquivo: Arquivo enviado pelo Streamlit (UploadedFile)
+
+        Returns:
+            tuple: (sucesso, mensagem)
+        """
+        if not arquivo:
+            return False, "Nenhum arquivo fornecido"
+
+        try:
+            # Valida se o item existe
+            item = self.action_plan_df[self.action_plan_df['id'] == str(item_id)]
+            if item.empty:
+                return False, "Item não encontrado"
+
+            # Gera nome do arquivo
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # ✅ CORREÇÃO: Sanitiza o nome do arquivo original
+            import re
+            safe_filename = re.sub(r'[^\w\s.-]', '', arquivo.name)
+            safe_filename = safe_filename.replace(' ', '_')
+
+            nome_arquivo = f"evidencia_{item_id}_{timestamp}_{safe_filename}"
+
+            # ✅ CORREÇÃO: Usa upload específico para evidências
+            logger.info(f"Fazendo upload de evidência para item {item_id} no bucket 'evidencias'")
+
+            # Upload direto especificando o tipo de documento
+            result = self.storage_manager.upload_file(
+                file_content=arquivo.getvalue(),
+                filename=nome_arquivo,
+                doc_type='evidencia',  # ✅ Especifica que é evidência
+                content_type=arquivo.type
+            )
+
+            if not result or 'url' not in result:
+                return False, "Falha ao fazer upload do arquivo"
+
+            arquivo_url = result['url']
+
+            # Atualiza o registro no banco
+            updates = {'evidencia_arquivo_id': arquivo_url}
+            if self.update_action_item(item_id, updates):
+                logger.info(f"✅ Evidência anexada ao item {item_id}: {arquivo_url}")
+                return True, "Evidência anexada com sucesso!"
+            else:
+                # Se falhou, tenta deletar o arquivo do storage
+                try:
+                    self.storage_manager.delete_file_by_url(arquivo_url)
+                except Exception as e:
+                    logger.warning(f"Não foi possível deletar arquivo órfão: {e}")
+                return False, "Falha ao atualizar o registro"
+
+        except Exception as e:
+            logger.error(f"Erro ao fazer upload de evidência: {e}", exc_info=True)
+            return False, f"Erro: {str(e)}"
+
+    def delete_evidencia(self, item_id: str) -> tuple[bool, str]:
+        """
+        Remove a evidência de um item do plano de ação.
+
+        Args:
+            item_id: ID do item do plano de ação
+
+        Returns:
+            tuple: (sucesso, mensagem)
+        """
+        try:
+            # Busca o item
+            item = self.action_plan_df[self.action_plan_df['id'] == str(item_id)]
+            if item.empty:
+                return False, "Item não encontrado"
+
+            evidencia_url = item.iloc[0].get('evidencia_arquivo_id')
+            if not evidencia_url or pd.isna(evidencia_url):
+                return False, "Este item não possui evidência"
+
+            # Deleta do storage
+            if self.storage_manager.delete_file_by_url(evidencia_url):
+                # Atualiza o registro
+                updates = {'evidencia_arquivo_id': None}
+                if self.update_action_item(item_id, updates):
+                    logger.info(f"✅ Evidência removida do item {item_id}")
+                    return True, "Evidência removida com sucesso!"
+
+            return False, "Falha ao remover evidência"
+
+        except Exception as e:
+            logger.error(f"Erro ao remover evidência: {e}", exc_info=True)
+            return False, f"Erro: {str(e)}"

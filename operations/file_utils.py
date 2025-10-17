@@ -9,21 +9,23 @@ logger = logging.getLogger(__name__)
 def infer_doc_type(filename: str) -> str:
     """
     Infere o tipo de documento pelo nome do arquivo.
-    
+
     Args:
         filename: Nome do arquivo
-        
+
     Returns:
-        Tipo do documento ('aso', 'treinamento', 'epi', 'doc_empresa')
+        Tipo do documento ('aso', 'treinamento', 'epi', 'doc_empresa', 'evidencia')
     """
     if not filename or not isinstance(filename, str):
         logger.warning(f"Nome de arquivo inválido: {filename}")
         return 'aso'  # Default
-    
+
     filename_lower = filename.lower()
-    
+
     # Prioridade de verificação
-    if 'aso' in filename_lower:
+    if 'evidencia' in filename_lower:  # ✅ ADICIONAR
+        return 'evidencia'
+    elif 'aso' in filename_lower:
         return 'aso'
     elif 'training' in filename_lower or 'treinamento' in filename_lower:
         return 'treinamento'
@@ -31,7 +33,7 @@ def infer_doc_type(filename: str) -> str:
         return 'epi'
     elif any(doc in filename_lower for doc in ['pgr', 'pcmso', 'ppr', 'pca', 'doc_empresa']):
         return 'doc_empresa'
-    
+
     # Default: ASO
     logger.debug(f"Tipo não identificado para '{filename}', usando 'aso' como padrão")
     return 'aso'

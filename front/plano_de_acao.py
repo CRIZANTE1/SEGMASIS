@@ -256,18 +256,19 @@ def show_plano_acao_page():
             plano_atual = row.get('plano_de_acao', '')
             responsavel_atual = row.get('responsavel', '')
             prazo_atual = row.get('prazo')
-            
-            if plano_atual or responsavel_atual or prazo_atual:
+            evidencia_url = row.get('evidencia_arquivo_id')  # ✅ ADICIONAR
+
+            if plano_atual or responsavel_atual or prazo_atual or evidencia_url:  # ✅ MODIFICAR
                 st.markdown("---")
                 st.markdown("#### 📝 Plano de Ação Atual")
-                
+
                 col_plano1, col_plano2 = st.columns([2, 1])
-                
+
                 with col_plano1:
                     if plano_atual:
                         st.markdown("**Ação Definida:**")
                         st.success(plano_atual)
-                
+
                 with col_plano2:
                     if responsavel_atual:
                         st.markdown("**Responsável:**")
@@ -275,7 +276,23 @@ def show_plano_acao_page():
                     if prazo_atual and pd.notna(prazo_atual):
                         st.markdown("**Prazo:**")
                         prazo_formatado = pd.to_datetime(prazo_atual).strftime('%d/%m/%Y')
-                        st.text(prazo_formatado)
+                        st.text(prazo_atual)
+
+                # ✅ ADICIONAR: Seção de evidência
+                if evidencia_url and pd.notna(evidencia_url):
+                    st.markdown("---")
+                    col_ev1, col_ev2 = st.columns([3, 1])
+                    with col_ev1:
+                        st.markdown("**📎 Evidência Anexada:**")
+                        st.link_button("📄 Ver Evidência", evidencia_url, use_container_width=True)
+                    with col_ev2:
+                        if st.button("🗑️ Remover", key=f"remove_ev_{row['id']}", use_container_width=True):
+                            success, msg = action_plan_manager.delete_evidencia(str(row['id']))
+                            if success:
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.error(msg)
             
             # Data de criação e conclusão
             col_date1, col_date2 = st.columns(2)
@@ -290,32 +307,29 @@ def show_plano_acao_page():
                 if data_conclusao and pd.notna(data_conclusao):
                     st.caption(f"✅ Concluído em: {pd.to_datetime(data_conclusao).strftime('%d/%m/%Y')}")
             
-            # Botão de ação
+            # Botões de ação
             st.markdown("---")
-            col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 1])
-            
+            col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([2, 1, 1, 1])  # ✅ MODIFICAR: 4 colunas
+
             with col_btn1:
                 if st.button("✏️ Editar Item", key=f"treat_{row['id']}", use_container_width=True, type="primary"):
                     st.session_state.current_item_to_treat = row.to_dict()
                     st.rerun()
-            
+
             with col_btn2:
                 if row.get('status', '').lower() not in ['concluído', 'cancelado']:
-                    # ✅ CORREÇÃO: Validação antes de permitir conclusão
                     plano_vazio = not plano_atual or str(plano_atual).strip() == ''
 
                     if plano_vazio:
-                        # Botão desabilitado com tooltip
                         st.button(
-                            "✅ Marcar como Concluído",
+                            "✅ Concluir",
                             key=f"complete_{row['id']}",
                             use_container_width=True,
                             disabled=True,
-                            help="⚠️ Você precisa definir um plano de ação antes de concluir este item"
+                            help="⚠️ Defina um plano de ação primeiro"
                         )
                     else:
-                        if st.button("✅ Marcar como Concluído", key=f"complete_{row['id']}", use_container_width=True):
-                            # ✅ CORREÇÃO: Implementação completa da conclusão
+                        if st.button("✅ Concluir", key=f"complete_{row['id']}", use_container_width=True):
                             with st.spinner("Concluindo item..."):
                                 updates = {
                                     'status': 'Concluído',
@@ -323,7 +337,6 @@ def show_plano_acao_page():
                                 }
 
                                 if action_plan_manager.update_action_item(str(row['id']), updates):
-                                    # ✅ CORREÇÃO: Limpar cache e forçar reload
                                     from operations.cached_loaders import load_all_unit_data
                                     load_all_unit_data.clear()
                                     st.cache_data.clear()
@@ -333,9 +346,17 @@ def show_plano_acao_page():
                                     st.balloons()
                                     st.rerun()
                                 else:
-                                    st.error("❌ Falha ao concluir o item. Tente novamente.")
-            
+                                    st.error("❌ Falha ao concluir o item.")
+
+            # ✅ ADICIONAR: Botão de evidência
             with col_btn3:
+                if row.get('status', '').lower() not in ['concluído', 'cancelado']:
+                    if st.button("📎 Evidência", key=f"evidence_{row['id']}", use_container_width=True):
+                        st.session_state.show_evidence_dialog = True
+                        st.session_state.evidence_item_id = row['id']
+                        st.rerun()
+
+            with col_btn4:
                 if st.button("🗑️ Excluir", key=f"delete_{row['id']}", use_container_width=True):
                     st.session_state.show_delete_action_item = True
                     st.session_state.action_item_to_delete = row['id']
@@ -349,6 +370,10 @@ def show_plano_acao_page():
     if st.session_state.get('show_delete_action_item'):
         show_delete_dialog(action_plan_manager)
 
+    # ✅ ADICIONAR: Diálogo de evidência
+    if st.session_state.get('show_evidence_dialog'):
+        show_evidence_dialog(action_plan_manager)
+
 def show_treatment_dialog(action_plan_manager):
     """Diálogo aprimorado para editar itens do plano de ação."""
     
@@ -358,7 +383,13 @@ def show_treatment_dialog(action_plan_manager):
         
         st.markdown(f"### 📌 {item['item_nao_conforme'][:100]}...")
         st.caption(f"**ID:** {item['id']}")
-        
+
+        # ✅ ADICIONAR: Mostrar evidência se existir
+        evidencia_url = item.get('evidencia_arquivo_id')
+        if evidencia_url and pd.notna(evidencia_url):
+            st.info("📎 Este item já possui uma evidência anexada")
+            st.link_button("📄 Ver Evidência Atual", evidencia_url)
+
         with st.form("treatment_form"):
             st.markdown("#### 📝 Plano de Ação")
             
@@ -506,3 +537,53 @@ def show_delete_dialog(action_plan_manager):
             st.rerun()
     
     delete_confirmation()
+
+# ✅ ADICIONAR: Nova função para diálogo de evidência
+def show_evidence_dialog(action_plan_manager):
+    """Diálogo para upload de evidência."""
+
+    @st.dialog("📎 Anexar Evidência", width="large")
+    def evidence_form():
+        item_id = st.session_state.evidence_item_id
+
+        st.markdown("### Upload de Evidência")
+        st.info("""
+        Anexe um arquivo que comprove a conclusão da ação corretiva.
+
+        **Formatos aceitos:** PDF, Imagem (JPG, PNG), Documentos (DOCX, XLSX)
+        """)
+
+        arquivo = st.file_uploader(
+            "Selecione o arquivo de evidência:",
+            type=['pdf', 'jpg', 'jpeg', 'png', 'docx', 'xlsx', 'doc', 'xls'],
+            key="evidence_uploader"
+        )
+
+        col1, col2 = st.columns(2)
+
+        if col1.button("📤 Fazer Upload", type="primary", use_container_width=True, disabled=not arquivo):
+            if arquivo:
+                with st.spinner("Fazendo upload..."):
+                    success, msg = action_plan_manager.upload_evidencia(item_id, arquivo)
+
+                    if success:
+                        st.success(msg)
+                        del st.session_state.show_evidence_dialog
+                        del st.session_state.evidence_item_id
+
+                        # Limpa cache
+                        from operations.cached_loaders import load_all_unit_data
+                        load_all_unit_data.clear()
+                        st.cache_data.clear()
+                        st.session_state.force_reload_managers = True
+
+                        st.rerun()
+                    else:
+                        st.error(msg)
+
+        if col2.button("❌ Cancelar", use_container_width=True):
+            del st.session_state.show_evidence_dialog
+            del st.session_state.evidence_item_id
+            st.rerun()
+
+    evidence_form()
