@@ -83,7 +83,7 @@ class SupabaseOperations:
                 query = text(f'SELECT * FROM "{table_name}"')
                 params = {}
             else:
-                query = text(f'SELECT * FROM "{table_name}" WHERE unit_id = :unit_id')
+                query = text(f'SELECT * FROM "{table_name}" WHERE unit_id = :unit_id OR unit_id IS NULL')
                 params = {"unit_id": self.unit_id}
             
             with self.engine.connect() as conn:
