@@ -105,142 +105,11 @@ def show_compliance_rules_management(matrix_manager: GlobalMatrixManager):
     except Exception as e:
         st.error(f"Erro ao carregar regras: {e}")
 
-    # --- Funções do Diálogo de Regras ---
-    def handle_rule_dialog():
-        """Manipula o diálogo de criação/edição de regras"""
-        if not st.session_state.get('show_rule_dialog'):
-            return
+    # Renderiza o diálogo se necessário
+    if st.session_state.get('show_rule_dialog'):
+        handle_rule_dialog(matrix_manager)
 
-        rule_data = st.session_state.get('rule_to_edit')
-        target_unit_id = st.session_state.get('target_unit_id')
-        is_edit = rule_data is not None
 
-        @st.dialog("Gerenciar Regra de Conformidade", on_dismiss=lambda: st.session_state.pop('show_rule_dialog', None))
-        def rule_form_dialog():
-            st.subheader("Editar Regra" if is_edit else "Adicionar Nova Regra")
-
-            if target_unit_id:
-                all_units = matrix_manager.get_all_units()
-                unit_name = next((u['nome_unidade'] for u in all_units if str(u['id']) == str(target_unit_id)), "Cliente")
-                st.info(f"Esta regra será aplicada **apenas** à unidade: {unit_name}")
-            else:
-                st.warning("Esta é uma **Regra Global** e será aplicada a todas as unidades que não tiverem uma regra customizada.")
-
-            with st.form("rule_form"):
-                norma = st.text_input("Norma (ex: NR-10, NR-35)", value=rule_data.get('norma') if rule_data else "NR-").upper()
-                titulo = st.text_input("Título do Treinamento (ex: Básico, SEP, Especializado)", value=rule_data.get('titulo') if rule_data else "")
-
-                st.markdown("---")
-                st.markdown("##### 📚 Formação Inicial")
-
-                ch_form_def_emp = st.checkbox(
-                    "Carga horária definida pelo empregador",
-                    value=pd.isna(rule_data.get('carga_horaria_minima_horas')) if rule_data else True
-                )
-                ch_formacao = st.number_input(
-                    "Carga horária mínima (horas)",
-                    min_value=0,
-                    value=int(rule_data.get('carga_horaria_minima_horas', 0)) if rule_data and not pd.isna(rule_data.get('carga_horaria_minima_horas')) else 0,
-                    disabled=ch_form_def_emp
-                )
-
-                st.markdown("---")
-                st.markdown("##### 🔄 Reciclagem")
-
-                rec_anos_na = st.checkbox(
-                    "Não se aplica / Período variável",
-                    value=pd.isna(rule_data.get('reciclagem_anos')) if rule_data else True
-                )
-                rec_anos = st.number_input(
-                    "Periodicidade (anos)",
-                    min_value=0.0,
-                    step=0.5,
-                    format="%.1f",
-                    value=float(rule_data.get('reciclagem_anos', 0.0)) if rule_data and not pd.isna(rule_data.get('reciclagem_anos')) else 0.0,
-                    disabled=rec_anos_na
-                )
-
-                ch_rec_def_emp = st.checkbox(
-                    "Carga horária de reciclagem definida pelo empregador",
-                    value=pd.isna(rule_data.get('reciclagem_carga_horaria_horas')) if rule_data else True
-                )
-                ch_reciclagem = st.number_input(
-                    "Carga horária mínima reciclagem (horas)",
-                    min_value=0,
-                    value=int(rule_data.get('reciclagem_carga_horaria_horas', 0)) if rule_data and not pd.isna(rule_data.get('reciclagem_carga_horaria_horas')) else 0,
-                    disabled=ch_rec_def_emp
-                )
-
-                st.markdown("---")
-                is_active = st.checkbox(
-                    "Regra Ativa",
-                    value=rule_data.get('treinamento_is_active', True) if rule_data else True
-                )
-
-                if st.form_submit_button("💾 Salvar Regra", type="primary"):
-                    if not norma or not titulo:
-                        st.error("Norma e Título são obrigatórios.")
-                        return
-
-                    # Preparar dados da regra
-                    training_payload = {
-                        'titulo': titulo,
-                        'carga_horaria_minima_horas': None if ch_form_def_emp else int(ch_formacao),
-                        'reciclagem_anos': None if rec_anos_na else float(rec_anos),
-                        'reciclagem_carga_horaria_horas': None if ch_rec_def_emp else int(ch_reciclagem),
-                        'is_active': is_active
-                    }
-
-                    supabase_ops = SupabaseOperations(unit_id=None)
-                    with st.spinner("Salvando regra..."):
-                        if is_edit:
-                            # UPDATE: Editar regra existente
-                            success = supabase_ops.update_row("regras_treinamentos", rule_data['treinamento_id'], training_payload)
-                            if success:
-                                st.toast("✅ Regra atualizada com sucesso!")
-                            else:
-                                st.error("❌ Falha ao atualizar a regra.")
-                        else:
-                            # INSERT: Criar nova regra
-                            # 1. Primeiro encontra ou cria a norma pai
-                            existing_normas = supabase_ops.get_by_field("regras_normas", "norma", norma)
-
-                            # Filtrar pela unidade específica (global ou unitária)
-                            if target_unit_id:
-                                existing_normas = existing_normas[existing_normas['unit_id'] == target_unit_id]
-                            else:
-                                existing_normas = existing_normas[existing_normas['unit_id'].isnull()]
-
-                            if not existing_normas.empty:
-                                # Norma já existe
-                                id_norma = existing_normas.iloc[0]['id']
-                            else:
-                                # Criar nova norma
-                                norma_payload = {"norma": norma, "unit_id": target_unit_id}
-                                id_norma = supabase_ops.insert_row("regras_normas", norma_payload)
-
-                            if id_norma:
-                                # Associar treinamento à norma
-                                training_payload['id_norma'] = id_norma
-                                training_id = supabase_ops.insert_row("regras_treinamentos", training_payload)
-
-                                if training_id:
-                                    st.toast("✅ Nova regra criada com sucesso!")
-                                    success = True
-                                else:
-                                    st.error("❌ Falha ao salvar o treinamento.")
-                                    success = False
-                            else:
-                                st.error("❌ Falha ao encontrar ou criar a norma pai.")
-                                success = False
-
-                    if success:
-                        # Limpar cache para forçar atualização nas próximas consultas
-                        load_nr_rules_data.clear()
-                        st.session_state.pop('show_rule_dialog', None)
-                        st.rerun()
-
-        rule_form_dialog()
 
 # --- Funções para a Visão Global (Super Admin) ---
 
@@ -580,6 +449,178 @@ def show_super_admin_view():
             
     handle_user_dialog(matrix_manager)
     handle_delete_dialog(matrix_manager)
+
+def handle_rule_dialog(matrix_manager: GlobalMatrixManager):
+    """Manipula o diálogo de criação/edição de regras"""
+    if not st.session_state.get('show_rule_dialog'):
+        return
+
+    rule_data = st.session_state.get('rule_to_edit')
+    target_unit_id = st.session_state.get('target_unit_id')
+    is_edit = rule_data is not None
+
+    @st.dialog("Gerenciar Regra de Conformidade", width="large")
+    def rule_form_dialog():
+        st.subheader("Editar Regra" if is_edit else "Adicionar Nova Regra")
+
+        if target_unit_id:
+            all_units = matrix_manager.get_all_units()
+            unit_name = next((u['nome_unidade'] for u in all_units if str(u['id']) == str(target_unit_id)), "Cliente")
+            st.info(f"Esta regra será aplicada **apenas** à unidade: {unit_name}")
+        else:
+            st.warning("Esta é uma **Regra Global** e será aplicada a todas as unidades que não tiverem uma regra customizada.")
+
+        with st.form("rule_form"):
+            norma = st.text_input(
+                "Norma (ex: NR-10, NR-35)",
+                value=rule_data.get('norma') if rule_data else "NR-"
+            ).upper()
+
+            titulo = st.text_input(
+                "Título do Treinamento (ex: Básico, SEP, Especializado)",
+                value=rule_data.get('titulo') if rule_data else ""
+            )
+
+            st.markdown("---")
+            st.markdown("##### 📚 Formação Inicial")
+
+            ch_form_def_emp = st.checkbox(
+                "Carga horária definida pelo empregador",
+                value=pd.isna(rule_data.get('carga_horaria_minima_horas')) if rule_data else True
+            )
+            ch_formacao = st.number_input(
+                "Carga horária mínima (horas)",
+                min_value=0,
+                value=int(rule_data.get('carga_horaria_minima_horas', 0)) if rule_data and not pd.isna(rule_data.get('carga_horaria_minima_horas')) else 0,
+                disabled=ch_form_def_emp
+            )
+
+            st.markdown("---")
+            st.markdown("##### 🔄 Reciclagem")
+
+            rec_anos_na = st.checkbox(
+                "Não se aplica / Período variável",
+                value=pd.isna(rule_data.get('reciclagem_anos')) if rule_data else True
+            )
+            rec_anos = st.number_input(
+                "Periodicidade (anos)",
+                min_value=0.0,
+                step=0.5,
+                format="%.1f",
+                value=float(rule_data.get('reciclagem_anos', 0.0)) if rule_data and not pd.isna(rule_data.get('reciclagem_anos')) else 0.0,
+                disabled=rec_anos_na
+            )
+
+            ch_rec_def_emp = st.checkbox(
+                "Carga horária de reciclagem definida pelo empregador",
+                value=pd.isna(rule_data.get('reciclagem_carga_horaria_horas')) if rule_data else True
+            )
+            ch_reciclagem = st.number_input(
+                "Carga horária mínima reciclagem (horas)",
+                min_value=0,
+                value=int(rule_data.get('reciclagem_carga_horaria_horas', 0)) if rule_data and not pd.isna(rule_data.get('reciclagem_carga_horaria_horas')) else 0,
+                disabled=ch_rec_def_emp
+            )
+
+            st.markdown("---")
+            is_active = st.checkbox(
+                "Regra Ativa",
+                value=rule_data.get('treinamento_is_active', True) if rule_data else True
+            )
+
+            col_save, col_cancel = st.columns(2)
+
+            with col_save:
+                submit = st.form_submit_button("💾 Salvar Regra", type="primary", use_container_width=True)
+
+            with col_cancel:
+                cancel = st.form_submit_button("❌ Cancelar", use_container_width=True)
+
+            if cancel:
+                st.session_state.pop('show_rule_dialog', None)
+                st.session_state.pop('rule_to_edit', None)
+                st.session_state.pop('target_unit_id', None)
+                st.rerun()
+
+            if submit:
+                if not norma or not titulo:
+                    st.error("Norma e Título são obrigatórios.")
+                    return
+
+                # Preparar dados da regra
+                training_payload = {
+                    'titulo': titulo,
+                    'carga_horaria_minima_horas': None if ch_form_def_emp else int(ch_formacao),
+                    'reciclagem_anos': None if rec_anos_na else float(rec_anos),
+                    'reciclagem_carga_horaria_horas': None if ch_rec_def_emp else int(ch_reciclagem),
+                    'is_active': is_active
+                }
+
+                supabase_ops = SupabaseOperations(unit_id=None)
+
+                with st.spinner("Salvando regra..."):
+                    success = False
+
+                    if is_edit:
+                        # UPDATE: Editar regra existente
+                        success = supabase_ops.update_row(
+                            "regras_treinamentos",
+                            rule_data['treinamento_id'],
+                            training_payload
+                        )
+
+                        if success:
+                            st.success("✅ Regra atualizada com sucesso!")
+                        else:
+                            st.error("❌ Falha ao atualizar a regra.")
+                    else:
+                        # INSERT: Criar nova regra
+                        # 1. Encontra ou cria a norma pai
+                        existing_normas = supabase_ops.get_by_field("regras_normas", "norma", norma)
+
+                        # Filtrar pela unidade específica
+                        if target_unit_id:
+                            existing_normas = existing_normas[existing_normas['unit_id'] == target_unit_id]
+                        else:
+                            existing_normas = existing_normas[existing_normas['unit_id'].isnull()]
+
+                        if not existing_normas.empty:
+                            id_norma = existing_normas.iloc[0]['id']
+                        else:
+                            # Criar nova norma
+                            norma_payload = {
+                                "norma": norma,
+                                "unit_id": target_unit_id,
+                                "is_active": True
+                            }
+                            id_norma = supabase_ops.insert_row("regras_normas", norma_payload)
+
+                        if id_norma:
+                            training_payload['id_norma'] = id_norma
+                            training_id = supabase_ops.insert_row("regras_treinamentos", training_payload)
+
+                            if training_id:
+                                st.success("✅ Nova regra criada com sucesso!")
+                                success = True
+                            else:
+                                st.error("❌ Falha ao salvar o treinamento.")
+                        else:
+                            st.error("❌ Falha ao encontrar ou criar a norma pai.")
+
+                if success:
+                    # Limpar cache
+                    from operations.cached_loaders import load_nr_rules_data
+                    load_nr_rules_data.clear()
+
+                    # Limpar session state
+                    st.session_state.pop('show_rule_dialog', None)
+                    st.session_state.pop('rule_to_edit', None)
+                    st.session_state.pop('target_unit_id', None)
+
+                    st.rerun()
+
+    # Renderiza o diálogo
+    rule_form_dialog()
 
 def show_unit_admin_view():
     is_single_mode = st.session_state.get('is_single_company_mode', False)

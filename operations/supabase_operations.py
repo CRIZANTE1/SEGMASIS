@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import logging
 from datetime import datetime
+from typing import Optional
 from sqlalchemy import text
 from managers.supabase_config import get_database_engine
 
@@ -10,7 +11,7 @@ logger = logging.getLogger('segsisone_app.supabase_operations')
 class SupabaseOperations:
     _instance = None
 
-    def __new__(cls, unit_id: str = None):
+    def __new__(cls, unit_id: Optional[str] = None):
         cache_key = f"_instance_{unit_id}"
         if not hasattr(cls, cache_key) or getattr(cls, cache_key) is None:
             logger.info(f"Criando instância de SupabaseOperations para unit_id: {unit_id}")
@@ -19,7 +20,7 @@ class SupabaseOperations:
             instance._initialized = False
         return getattr(cls, cache_key)
 
-    def __init__(self, unit_id: str = None):
+    def __init__(self, unit_id: Optional[str] = None):
         if self._initialized:
             return
 
