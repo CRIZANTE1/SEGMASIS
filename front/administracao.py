@@ -597,7 +597,7 @@ def show_unit_admin_view():
     display_minimalist_metrics(employee_manager)
     st.divider()
 
-    tab_list = ["Gerenciar Empresas", "Gerenciar Funcionários", "Gerenciar Matriz", "Assistente de Matriz (IA)"]
+    tab_list = ["Gerenciar Empresas", "Gerenciar Funcionários", "Gerenciar Matriz"]
     if is_single_mode: tab_list.pop(0)
     
     tabs = st.tabs(tab_list)
@@ -661,14 +661,72 @@ def show_unit_admin_view():
     matriz_tab_index = 1 if is_single_mode else 2
     with tabs[matriz_tab_index]:
         st.header("Matriz de Treinamento por Função")
-        # Coloque o código completo da aba de gerenciamento da matriz aqui
-    
-    # Aba Assistente de Matriz
-    assistente_tab_index = 2 if is_single_mode else 3
-    if len(tabs) > assistente_tab_index:
-        with tabs[assistente_tab_index]:
-            st.header("🤖 Assistente de Matriz com IA")
-            # Coloque o código completo da aba de assistente de IA aqui
+        
+        # 1. Adicionar Nova Função
+        with st.expander("➕ Adicionar Nova Função à Matriz"):
+            with st.form("form_add_funcao", clear_on_submit=True):
+                new_func_name = st.text_input("Nome da Função/Cargo")
+                new_func_desc = st.text_area("Breve descrição da Função")
+                if st.form_submit_button("💾 Salvar Função"):
+                    if new_func_name:
+                        _, msg = matrix_manager_unidade.add_function(new_func_name, new_func_desc)
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error("O nome da função é obrigatório.")
+
+        st.divider()
+
+        # 2. Gerenciar Funções Existentes
+        st.subheader("⚙️ Gerenciar Funções e Treinamentos")
+        
+        functions_df = matrix_manager_unidade.functions_df
+        
+        if functions_df.empty:
+            st.info("Nenhuma função cadastrada para esta unidade. Adicione uma função acima.")
+            return
+
+        # Selecionar a função para editar
+        func_options = functions_df['nome_funcao'].tolist()
+        selected_function_name = st.selectbox(
+            "Selecione a função para gerenciar os treinamentos:",
+            options=[''] + func_options,
+            format_func=lambda x: "Selecione..." if x == '' else x
+        )
+
+        if selected_function_name:
+            selected_function_id = functions_df[functions_df['nome_funcao'] == selected_function_name].iloc[0]['id']
+            
+            st.markdown(f"#### Treinamentos para: **{selected_function_name}**")
+
+            # Carregar todos os treinamentos disponíveis (regras)
+            all_rules_df = matrix_manager_unidade.nr_rules_manager.all_rules_df
+            if not all_rules_df.empty:
+                # Criar uma lista de treinamentos no formato "NORMA - TÍTULO"
+                available_trainings = all_rules_df.apply(
+                    lambda row: f"{row['norma']} - {row['titulo']}", axis=1
+                ).unique().tolist()
+
+                # Carregar treinamentos já associados à função
+                required_trainings = matrix_manager_unidade.get_required_trainings_for_function(selected_function_name)
+
+                # Multi-select para associar/desassociar treinamentos
+                selected_trainings = st.multiselect(
+                    "Selecione os treinamentos obrigatórios para esta função:",
+                    options=available_trainings,
+                    default=required_trainings,
+                    help="Adicione ou remova treinamentos da lista."
+                )
+
+                if st.button("💾 Salvar Mapeamento", type="primary"):
+                    with st.spinner("Atualizando..."):
+                        success, message = matrix_manager_unidade.update_function_mappings(selected_function_id, selected_trainings)
+                        if success:
+                            st.success(message)
+                        else:
+                            st.error(message)
+            else:
+                st.warning("Nenhuma regra de treinamento configurada. Vá para 'Regras de Conformidade' no painel de Super Admin para criá-las.")
 
 def show_admin_page():
     if not check_permission(level='editor'):
