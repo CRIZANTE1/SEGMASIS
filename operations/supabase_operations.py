@@ -184,17 +184,30 @@ class SupabaseOperations:
     def get_by_field(self, table_name: str, field: str, value) -> pd.DataFrame:
         if not self.engine:
             return pd.DataFrame()
-        
+
         try:
             query = text(f'SELECT * FROM "{table_name}" WHERE "{field}" = :value')
-            
+
             with self.engine.connect() as conn:
                 df = pd.read_sql(query, conn, params={'value': value})
-            
+
             return df
         except Exception as e:
             logger.error(f"Erro ao buscar em '{table_name}': {e}")
             return pd.DataFrame()
+
+    def get_by_id(self, table_name: str, row_id: str) -> pd.DataFrame:
+        """
+        Busca um registro por ID.
+
+        Args:
+            table_name: Nome da tabela
+            row_id: ID do registro
+
+        Returns:
+            DataFrame com o registro encontrado ou DataFrame vazio
+        """
+        return self.get_by_field(table_name, 'id', row_id)
 
     def get_by_field_no_rls(self, table_name: str, field: str, value) -> pd.DataFrame:
         return self.get_by_field(table_name, field, value)
