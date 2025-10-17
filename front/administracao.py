@@ -486,13 +486,15 @@ def handle_rule_dialog(matrix_manager: GlobalMatrixManager):
 
             ch_form_def_emp = st.checkbox(
                 "Carga horária definida pelo empregador",
-                value=pd.isna(rule_data.get('carga_horaria_minima_horas')) if rule_data else True
+                value=pd.isna(rule_data.get('carga_horaria_minima_horas')) if rule_data else False,  # ✅ Padrão: False
+                key="ch_form_checkbox"
             )
             ch_formacao = st.number_input(
                 "Carga horária mínima (horas)",
                 min_value=0,
                 value=int(rule_data.get('carga_horaria_minima_horas', 0)) if rule_data and not pd.isna(rule_data.get('carga_horaria_minima_horas')) else 0,
-                disabled=ch_form_def_emp
+                disabled=ch_form_def_emp,  # ✅ Desabilita APENAS se o checkbox estiver marcado
+                key="ch_form_input"
             )
 
             st.markdown("---")
@@ -500,7 +502,8 @@ def handle_rule_dialog(matrix_manager: GlobalMatrixManager):
 
             rec_anos_na = st.checkbox(
                 "Não se aplica / Período variável",
-                value=pd.isna(rule_data.get('reciclagem_anos')) if rule_data else True
+                value=pd.isna(rule_data.get('reciclagem_anos')) if rule_data else False,  # ✅ Padrão: False
+                key="rec_anos_checkbox"
             )
             rec_anos = st.number_input(
                 "Periodicidade (anos)",
@@ -508,18 +511,21 @@ def handle_rule_dialog(matrix_manager: GlobalMatrixManager):
                 step=0.5,
                 format="%.1f",
                 value=float(rule_data.get('reciclagem_anos', 0.0)) if rule_data and not pd.isna(rule_data.get('reciclagem_anos')) else 0.0,
-                disabled=rec_anos_na
+                disabled=rec_anos_na,  # ✅ Desabilita APENAS se o checkbox estiver marcado
+                key="rec_anos_input"
             )
 
             ch_rec_def_emp = st.checkbox(
                 "Carga horária de reciclagem definida pelo empregador",
-                value=pd.isna(rule_data.get('reciclagem_carga_horaria_horas')) if rule_data else True
+                value=pd.isna(rule_data.get('reciclagem_carga_horaria_horas')) if rule_data else False,  # ✅ Padrão: False
+                key="ch_rec_checkbox"
             )
             ch_reciclagem = st.number_input(
                 "Carga horária mínima reciclagem (horas)",
                 min_value=0,
                 value=int(rule_data.get('reciclagem_carga_horaria_horas', 0)) if rule_data and not pd.isna(rule_data.get('reciclagem_carga_horaria_horas')) else 0,
-                disabled=ch_rec_def_emp
+                disabled=ch_rec_def_emp,  # ✅ Desabilita APENAS se o checkbox estiver marcado
+                key="ch_rec_input"
             )
 
             st.markdown("---")
