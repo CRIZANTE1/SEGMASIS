@@ -411,9 +411,14 @@ def show_dashboard_page():
                                                 
                                                 # Fuzzy matching se não houver match direto
                                                 if not has_match and completed_trainings:
-                                                    best_match = process.extractOne(req_lower, completed_trainings)
-                                                    if best_match and best_match[1] > 85:
-                                                        has_match = True
+                                                    try:
+                                                        from fuzzywuzzy import process as fuzz_process  # ✅ Import local seguro
+                                                        best_match = fuzz_process.extractOne(req_lower, completed_trainings)
+                                                        if best_match and best_match[1] > 85:
+                                                            has_match = True
+                                                    except ImportError:
+                                                        logger.warning("fuzzywuzzy não disponível para fuzzy matching")
+                                                        pass
                                                 
                                                 if not has_match:
                                                     missing.append(req)

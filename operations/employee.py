@@ -679,28 +679,33 @@ class EmployeeManager:
     def _padronizar_norma(self, norma: str) -> str:
         """
         ✅ FUNÇÃO ATUALIZADA: Padroniza o nome da norma de forma contextual.
-
-        A ordem das verificações é crucial para não perder informações importantes
-        como "SEP" em "NR-10 SEP".
         """
         if not norma or not isinstance(norma, str):
             return "N/A"
 
         norma_upper = str(norma).strip().upper()
 
-        # 1. Primeiro, verifica por termos compostos e específicos.
+        # 1. Casos especiais compostos (ordem importa!)
         if "10" in norma_upper and "SEP" in norma_upper:
             return "NR-10 SEP"
+
         if any(term in norma_upper for term in ["BRIGADA", "INCÊNDIO", "IT-17", "NR-23"]):
             return "BRIGADA DE INCÊNDIO"
-        if "16710" in norma_upper or "RESGATE TÉCNICO" in norma_upper:
-            return "NBR-16710 RESGATE TÉCNICO"
+
+        # ✅ CORREÇÃO: Normaliza NBR-16710 com qualquer sufixo
+        if "16710" in norma_upper or "NBR" in norma_upper and "RESGATE" in norma_upper:
+            # Preserva o sufixo se houver (Nível Operacional, Supervisor, etc)
+            if "OPERACIONAL" in norma_upper:
+                return "NBR-16710 RESGATE TÉCNICO - OPERACIONAL"
+            elif "SUPERVISOR" in norma_upper:
+                return "NBR-16710 RESGATE TÉCNICO - SUPERVISOR"
+            else:
+                return "NBR-16710 RESGATE TÉCNICO"
+
         if "PERMISSÃO" in norma_upper or re.search(r'\bPT\b', norma_upper):
             return "PERMISSÃO DE TRABALHO (PT)"
 
-        # 2. Se não for um caso especial, busca pelo padrão genérico NR-XX.
-        #    Isso garante que "NR-10 Básico" ou "NR 10" se tornem "NR-10".
-        # ✅ CORREÇÃO: Validar match.group antes de usar
+        # 2. Padrão genérico NR-XX
         match = re.search(r'NR\s?-?(\d+)', norma_upper)
         if match and match.group(1):
             try:
@@ -710,7 +715,7 @@ class EmployeeManager:
                 logger.error(f"Erro ao converter NR number: {match.group(1)} - {e}")
                 return norma_upper
 
-        # 3. Se nenhuma regra for aplicada, retorna o texto original em maiúsculas.
+        # 3. Retorna original se nenhuma regra se aplicar
         return norma_upper
 
     def calcular_vencimento_treinamento(self, data, norma, modulo=None, tipo_treinamento='formação'):
@@ -721,7 +726,7 @@ class EmployeeManager:
         norma_padronizada = self._padronizar_norma(norma)
 
         # Busca a regra específica no banco de dados
-        rule = self.nr_rules_manager.find_training_rule(norma_nome=norma_padronizada, modulo_nome=modulo)
+        rule = self.nr_rules_manager.find_training_rule(norma_nome=norma_padronizada, modulo_nome=str(modulo or 'N/A'))
 
         if rule is None:
             st.warning(f"Regras de vencimento não encontradas no banco de dados para '{norma_padronizada}'.")

@@ -143,7 +143,7 @@ def load_nr_rules_data() -> pd.DataFrame:
         SELECT
             n.id AS norma_id,
             n.norma,
-            n.unit_id,
+            CAST(n.unit_id AS TEXT) AS unit_id,  -- ✅ CORREÇÃO: Converte UUID para TEXT
             n.is_active AS norma_is_active,
             t.id AS treinamento_id,
             t.titulo,
