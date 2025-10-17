@@ -708,7 +708,10 @@ def show_unit_admin_view():
                 ).unique().tolist()
 
                 # Carregar treinamentos já associados à função
-                required_trainings = matrix_manager_unidade.get_required_trainings_for_function(selected_function_name)
+                required_trainings_raw = matrix_manager_unidade.get_required_trainings_for_function(selected_function_name)
+                
+                # Filtrar os treinamentos requeridos para garantir que eles existam na lista de disponíveis
+                required_trainings = [t for t in required_trainings_raw if t in available_trainings]
 
                 # Multi-select para associar/desassociar treinamentos
                 selected_trainings = st.multiselect(
