@@ -42,28 +42,35 @@ Ou configure a variável de ambiente:
     
     return db_connection_string
 
-def get_supabase_credentials() -> tuple[str, str]:
+def get_supabase_credentials(for_storage: bool = False) -> tuple[str, str]:
     """Retorna as credenciais do Supabase (para Storage)"""
     supabase_url = None
     supabase_key = None
-    
+
     try:
         if hasattr(st, 'secrets') and 'supabase' in st.secrets:
-            logger.info("Lendo configurações do Supabase de st.secrets")
             supabase_url = st.secrets.supabase.get("url")
-            supabase_key = st.secrets.supabase.get("key")
+
+            # ✅ Para storage, usa service_role_key que bypassa RLS
+            if for_storage:
+                supabase_key = st.secrets.supabase.get("service_role_key")
+            else:
+                supabase_key = st.secrets.supabase.get("key")
+
+            if for_storage and not supabase_key:
+                logger.warning("service_role_key não encontrada, usando key normal")
+                supabase_key = st.secrets.supabase.get("key")
     except Exception as e:
         logger.warning(f"Não foi possível ler de st.secrets: {e}")
-    
+
+    # Fallback para variáveis de ambiente
     if not supabase_url or not supabase_key:
-        logger.info("Lendo configurações do Supabase de variáveis de ambiente")
         supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
-    
-    if not supabase_url or not supabase_key:
-        logger.warning("Credenciais do Supabase não encontradas (Storage desabilitado)")
-        return None, None
-    
+        if for_storage:
+            supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
+        else:
+            supabase_key = os.getenv("SUPABASE_KEY")
+
     return supabase_url, supabase_key
 
 def get_database_engine(user_email: str = None):
@@ -96,21 +103,25 @@ def get_database_engine(user_email: str = None):
         logger.critical(f"Erro ao criar database engine: {e}")
         raise
 
-def get_supabase_client() -> Client:
-    """Retorna um cliente Supabase configurado (apenas para Storage)"""
-    supabase_url, supabase_key = get_supabase_credentials()
-    
+def get_supabase_client(for_storage: bool = False) -> Client:
+    """Retorna um cliente Supabase configurado"""
+    supabase_url, supabase_key = get_supabase_credentials(for_storage=for_storage)
+
     if not supabase_url or not supabase_key:
         logger.warning("Cliente Supabase não disponível")
         return None
-    
+
     try:
         client = create_client(supabase_url, supabase_key)
-        logger.info("Cliente Supabase criado com sucesso (Storage)")
         return client
     except Exception as e:
         logger.error(f"Erro ao criar cliente Supabase: {e}")
         return None
+
+# ✅ ADICIONE esta nova função
+def get_storage_client() -> Client:
+    """Retorna cliente Supabase específico para Storage (com service_role_key)"""
+    return get_supabase_client(for_storage=True)
 
 def get_cached_supabase_client() -> Client:
     """Retorna instância singleton do cliente"""

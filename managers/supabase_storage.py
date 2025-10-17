@@ -13,13 +13,14 @@ class SupabaseStorageManager:
     """Gerencia uploads e downloads de arquivos no Supabase Storage."""
     
     def __init__(self, unit_id: str = None):
-        """
-        Inicializa o gerenciador de storage.
-        
-        Args:
-            unit_id: ID da unidade operacional (usado para organizar arquivos)
-        """
-        self.supabase = get_cached_supabase_client()
+        """Inicializa o gerenciador de storage com service_role_key"""
+        # ✅ Usa função dedicada para storage
+        from managers.supabase_config import get_storage_client
+        self.supabase = get_storage_client()
+
+        if not self.supabase:
+            raise RuntimeError("Não foi possível inicializar cliente Supabase para Storage")
+
         self.unit_id = unit_id
         logger.info(f"SupabaseStorageManager inicializado para unit_id: {unit_id}")
     
@@ -445,5 +446,3 @@ class SupabaseUploader:
             return False
         
         return self.storage_manager.delete_file_by_url(file_url)
-    
-    
