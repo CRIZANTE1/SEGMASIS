@@ -150,17 +150,17 @@ class EPIManager:
     def add_epi_records(self, funcionario_id, arquivo_id, itens_epi, arquivo_hash=None):
         """Adiciona múltiplos registros de EPI usando Supabase."""
         funcionario_id_str = str(funcionario_id)
-        
+
         if arquivo_hash and verificar_hash_seguro(self.epi_df, 'arquivo_hash'):
             duplicata = self.epi_df[
                 (self.epi_df['funcionario_id'] == funcionario_id_str) &
                 (self.epi_df['arquivo_hash'] == arquivo_hash)
             ]
-            
+
             if not duplicata.empty:
                 st.warning(f"⚠️ Esta ficha de EPI já foi cadastrada anteriormente.")
                 return None
-        
+
         saved_ids = []
         for item in itens_epi:
             new_data = {
@@ -180,12 +180,16 @@ class EPIManager:
             except Exception as e:
                 st.error(f"Erro ao adicionar o item '{item.get('descricao')}': {e}")
                 continue
-        
+
         if saved_ids:
-            st.cache_data.clear()
-            self.load_epi_data()
+            # Após operação bem-sucedida:
+            from operations.cached_loaders import load_all_unit_data
+            load_all_unit_data.clear()  # Limpa cache da função
+            st.cache_data.clear()        # Limpa cache do Streamlit
+            st.session_state.force_reload_managers = True  # Força reload managers
+            logger.info("✅ EPIs adicionados. Reinicialização agendada.")
             return saved_ids
-        
+
         return None
 
     def delete_epi(self, epi_id: str, file_url: str):

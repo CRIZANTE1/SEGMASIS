@@ -280,7 +280,11 @@ class EmployeeManager:
         # ✅ CORREÇÃO: insert_row retorna apenas string do ID
         company_id = self.supabase_ops.insert_row("empresas", new_data)
         if company_id:
-            self.load_data()
+            # Após operação bem-sucedida:
+            load_all_unit_data.clear()  # Limpa cache da função
+            st.cache_data.clear()        # Limpa cache do Streamlit
+            st.session_state.force_reload_managers = True  # Força reload managers
+            logger.info("✅ Empresa adicionada. Reinicialização agendada.")
             return company_id, "Empresa cadastrada com sucesso"
         return None, "Falha ao cadastrar empresa."
 
@@ -288,14 +292,18 @@ class EmployeeManager:
         new_data = {'nome': nome, 'cargo': cargo, 'data_admissao': format_date_safe(data_admissao), 'empresa_id': empresa_id, 'status': 'Ativo'}
         employee_id = self.supabase_ops.insert_row("funcionarios", new_data)
         if employee_id:
-            self.load_data()
+            # Após operação bem-sucedida:
+            load_all_unit_data.clear()  # Limpa cache da função
+            st.cache_data.clear()        # Limpa cache do Streamlit
+            st.session_state.force_reload_managers = True  # Força reload managers
+            logger.info("✅ Funcionário adicionado. Reinicialização agendada.")
             return employee_id, "Funcionário adicionado com sucesso"
         return None, "Erro ao adicionar funcionário."
 
     def add_aso(self, aso_data: dict):
         funcionario_id = str(aso_data.get('funcionario_id'))
         arquivo_hash = aso_data.get('arquivo_hash')
-        
+
         if arquivo_hash and verificar_hash_seguro(self.aso_df, 'arquivo_hash'):
             duplicata = self.aso_df[
                 (self.aso_df['funcionario_id'] == funcionario_id) &
@@ -304,7 +312,7 @@ class EmployeeManager:
             if not duplicata.empty:
                 st.warning(f"⚠️ Este arquivo PDF já foi cadastrado anteriormente para este funcionário (ASO do tipo '{duplicata.iloc[0]['tipo_aso']}').")
                 return None
-        
+
         new_data = {
             'funcionario_id': funcionario_id,
             'data_aso': format_date_safe(aso_data.get('data_aso')),
@@ -317,8 +325,11 @@ class EmployeeManager:
         }
         aso_id = self.supabase_ops.insert_row("asos", new_data)
         if aso_id:
-            st.cache_data.clear()
-            self.load_data()
+            # Após operação bem-sucedida:
+            load_all_unit_data.clear()  # Limpa cache da função
+            st.cache_data.clear()        # Limpa cache do Streamlit
+            st.session_state.force_reload_managers = True  # Força reload managers
+            logger.info("✅ ASO adicionado. Reinicialização agendada.")
         return aso_id
 
     def add_training(self, training_data: dict):

@@ -64,11 +64,11 @@ class ActionPlanManager:
         if not self.data_loaded_successfully:
             st.error("Não é possível adicionar item de ação.")
             return None
-    
+
         item_title = item_details.get('item_verificacao', 'Não conformidade não especificada')
         item_observation = item_details.get('observacao', 'Sem detalhes fornecidos.')
         full_description = f"{item_title.strip()}: {item_observation.strip()}"
-        
+
         new_data = {
             'audit_run_id': str(audit_run_id),
             'id_empresa': str(company_id),
@@ -83,22 +83,27 @@ class ActionPlanManager:
             'data_criacao': date.today().strftime("%Y-%m-%d"),
             'data_conclusao': None
         }
-        
+
         if 'prazo' in new_data and (new_data['prazo'] == '' or new_data['prazo'] is None):
             new_data['prazo'] = None
 
         new_item_id = self.supabase_ops.insert_row("plano_acao", new_data)
-        
+
         if new_item_id:
+            # Após operação bem-sucedida:
+            from operations.cached_loaders import load_all_unit_data
+            load_all_unit_data.clear()  # Limpa cache da função
+            st.cache_data.clear()        # Limpa cache do Streamlit
+            st.session_state.force_reload_managers = True  # Força reload managers
             st.toast(f"Item de ação '{item_title}' criado com sucesso!", icon="✅")
+            logger.info("✅ Item de ação adicionado. Reinicialização agendada.")
             log_action("CREATE_ACTION_ITEM", {
-                "item_id": new_item_id, 
+                "item_id": new_item_id,
                 "company_id": company_id,
                 "original_doc_id": doc_id,
                 "employee_id": employee_id if employee_id else "N/A",
                 "description": full_description
             })
-            self.load_data()
             return new_item_id
         else:
             st.error("Falha crítica: Não foi possível salvar o item no Plano de Ação.")
@@ -127,15 +132,35 @@ class ActionPlanManager:
         if not self.data_loaded_successfully:
             st.error("Plano de ação não foi carregado corretamente.")
             return False
-        
-        success = self.supabase_ops.update_row("plano_acao", item_id, updates)
-        
-        if success:
-            log_action("UPDATE_ACTION_ITEM", {
-                "item_id": item_id,
-                "updated_fields": list(updates.keys())
-            })
-            self.load_data()
-            return True
-        
-        return False
+
+        # ✅ CORREÇÃO: Validação adicional
+        if not item_id or not updates:
+            logger.error("item_id ou updates não fornecidos")
+            return False
+
+        try:
+            success = self.supabase_ops.update_row("plano_acao", str(item_id), updates)
+
+            if success:
+                log_action("UPDATE_ACTION_ITEM", {
+                    "item_id": item_id,
+                    "updated_fields": list(updates.keys())
+                })
+
+                # ✅ CORREÇÃO: Limpar cache e forçar reload
+                from operations.cached_loaders import load_all_unit_data
+                load_all_unit_data.clear()
+                st.cache_data.clear()
+                st.session_state.force_reload_managers = True
+
+                logger.info(f"✅ Item de ação {item_id} atualizado. Reinicialização agendada.")
+
+                return True
+            else:
+                logger.error(f"Falha ao atualizar item {item_id} no Supabase")
+                return False
+
+        except Exception as e:
+            logger.error(f"Erro ao atualizar item de ação: {e}", exc_info=True)
+            st.error(f"Erro ao atualizar: {str(e)}")
+            return False

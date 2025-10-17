@@ -48,26 +48,32 @@ def initialize_managers():
     folder_id = st.session_state.get('folder_id')
     unit_name = st.session_state.get('unit_name')
     user_role = st.session_state.get('role')
-    
+
+    # Verifica se uma reinicialização forçada foi solicitada
+    force_reload = st.session_state.get('force_reload_managers', False)
+    if force_reload:
+        logger.info("🔄 Reinicialização forçada dos managers detectada")
+        st.session_state.force_reload_managers = False  # Reseta o flag
+
     if user_role == 'admin' and unit_name == 'Global':
         logger.info("Inicializando modo de visão global (admin)")
         keys_to_delete = [
-            'employee_manager', 'docs_manager', 'epi_manager', 
+            'employee_manager', 'docs_manager', 'epi_manager',
             'action_plan_manager', 'nr_analyzer', 'matrix_manager_unidade'
         ]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
-        
+
         st.session_state.managers_initialized = False
         st.session_state.managers_unit_id = None
         st.session_state.is_global_view = True
-        
+
         if 'matrix_manager' not in st.session_state:
             logger.info("Inicializando MatrixManager global...")
             st.session_state.matrix_manager = MatrixManager()
             logger.info("MatrixManager global inicializado.")
-        
+
         return
     
     st.session_state.is_global_view = False

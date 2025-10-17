@@ -301,14 +301,39 @@ def show_plano_acao_page():
             
             with col_btn2:
                 if row.get('status', '').lower() not in ['concluído', 'cancelado']:
-                    if st.button("✅ Marcar como Concluído", key=f"complete_{row['id']}", use_container_width=True):
-                        updates = {
-                            'status': 'Concluído',
-                            'data_conclusao': date.today().strftime("%Y-%m-%d")
-                        }
-                        if action_plan_manager.update_action_item(str(row['id']), updates):
-                            st.success("✅ Item marcado como concluído!")
-                            st.rerun()
+                    # ✅ CORREÇÃO: Validação antes de permitir conclusão
+                    plano_vazio = not plano_atual or str(plano_atual).strip() == ''
+
+                    if plano_vazio:
+                        # Botão desabilitado com tooltip
+                        st.button(
+                            "✅ Marcar como Concluído",
+                            key=f"complete_{row['id']}",
+                            use_container_width=True,
+                            disabled=True,
+                            help="⚠️ Você precisa definir um plano de ação antes de concluir este item"
+                        )
+                    else:
+                        if st.button("✅ Marcar como Concluído", key=f"complete_{row['id']}", use_container_width=True):
+                            # ✅ CORREÇÃO: Implementação completa da conclusão
+                            with st.spinner("Concluindo item..."):
+                                updates = {
+                                    'status': 'Concluído',
+                                    'data_conclusao': date.today().strftime("%Y-%m-%d")
+                                }
+
+                                if action_plan_manager.update_action_item(str(row['id']), updates):
+                                    # ✅ CORREÇÃO: Limpar cache e forçar reload
+                                    from operations.cached_loaders import load_all_unit_data
+                                    load_all_unit_data.clear()
+                                    st.cache_data.clear()
+                                    st.session_state.force_reload_managers = True
+
+                                    st.success("✅ Item marcado como concluído!")
+                                    st.balloons()
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Falha ao concluir o item. Tente novamente.")
             
             with col_btn3:
                 if st.button("🗑️ Excluir", key=f"delete_{row['id']}", use_container_width=True):

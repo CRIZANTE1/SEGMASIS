@@ -145,17 +145,17 @@ class CompanyDocsManager:
     def add_company_document(self, empresa_id, tipo_documento, data_emissao, vencimento, arquivo_id, arquivo_hash=None):
         """Adiciona documento da empresa usando Supabase."""
         empresa_id_str = str(empresa_id)
-        
+
         if arquivo_hash and verificar_hash_seguro(self.docs_df, 'arquivo_hash'):
             duplicata = self.docs_df[
                 (self.docs_df['empresa_id'] == empresa_id_str) &
                 (self.docs_df['arquivo_hash'] == arquivo_hash)
             ]
-            
+
             if not duplicata.empty:
                 st.warning(f"⚠️ Este arquivo PDF já foi cadastrado anteriormente para esta empresa.")
                 return None
-        
+
         # ✅ Valida datas antes de formatar
         if not isinstance(data_emissao, date):
             logger.error(f"data_emissao inválida: {type(data_emissao)}")
@@ -175,13 +175,17 @@ class CompanyDocsManager:
             'arquivo_id': str(arquivo_id),
             'arquivo_hash': arquivo_hash or ''
         }
-        
+
         try:
             # ✅ CORREÇÃO: insert_row retorna apenas string do ID
             doc_id = self.supabase_ops.insert_row("documentos_empresa", new_data)
             if doc_id:
-                st.cache_data.clear()
-                self.load_company_data()
+                # Após operação bem-sucedida:
+                from operations.cached_loaders import load_all_unit_data
+                load_all_unit_data.clear()  # Limpa cache da função
+                st.cache_data.clear()        # Limpa cache do Streamlit
+                st.session_state.force_reload_managers = True  # Força reload managers
+                logger.info("✅ Documento da empresa adicionado. Reinicialização agendada.")
                 return doc_id
             return None
         except Exception as e:
