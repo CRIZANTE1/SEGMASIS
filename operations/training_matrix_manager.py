@@ -74,36 +74,64 @@ class MatrixManager:
         return self._matrix_df if self._matrix_df is not None else pd.DataFrame(columns=self.columns_matrix)
 
     def _load_functions_data(self):
-        """Carrega os dados da tabela 'funcoes'."""
+        """Carrega os dados da tabela 'funcoes', unindo dados da unidade e globais."""
         try:
-            self._functions_df = self.supabase_ops.get_table_data("funcoes")
-            
-            # ✅ CORREÇÃO: Validação do DataFrame carregado
-            if self._functions_df is None:
-                logger.warning("get_table_data retornou None para 'funcoes'")
-                self._functions_df = pd.DataFrame(columns=self.columns_functions)
-            elif self._functions_df.empty:
-                logger.info("Tabela 'funcoes' está vazia")
+            # Carrega dados específicos da unidade
+            unit_df = self.supabase_ops.get_table_data("funcoes")
+
+            # Carrega dados globais (onde unit_id é NULL)
+            global_ops = SupabaseOperations(unit_id=None)
+            global_df = global_ops.get_table_data("funcoes")
+            if not global_df.empty:
+                global_df = global_df[global_df['unit_id'].isnull()]
+
+            # Concatena e remove duplicatas, mantendo os da unidade se houver conflito
+            if unit_df is not None and global_df is not None:
+                combined_df = pd.concat([unit_df, global_df], ignore_index=True)
+                self._functions_df = combined_df.drop_duplicates(subset=['id']).reset_index(drop=True)
+            elif unit_df is not None:
+                self._functions_df = unit_df
+            elif global_df is not None:
+                self._functions_df = global_df
             else:
-                logger.debug(f"Carregadas {len(self._functions_df)} funções")
+                self._functions_df = pd.DataFrame(columns=self.columns_functions)
+
+            if self._functions_df.empty:
+                logger.info("Tabela 'funcoes' está vazia para unidade e global.")
+            else:
+                logger.debug(f"Carregadas {len(self._functions_df)} funções (unidade e global)")
                 
         except Exception as e:
             logger.error(f"Erro ao carregar funções: {e}")
             self._functions_df = pd.DataFrame(columns=self.columns_functions)
         
     def _load_matrix_data(self):
-        """Carrega os dados da tabela 'matriz_treinamentos'."""
+        """Carrega os dados da tabela 'matriz_treinamentos', unindo dados da unidade e globais."""
         try:
-            self._matrix_df = self.supabase_ops.get_table_data("matriz_treinamentos")
-            
-            # ✅ CORREÇÃO: Validação do DataFrame carregado
-            if self._matrix_df is None:
-                logger.warning("get_table_data retornou None para 'matriz_treinamentos'")
-                self._matrix_df = pd.DataFrame(columns=self.columns_matrix)
-            elif self._matrix_df.empty:
-                logger.info("Tabela 'matriz_treinamentos' está vazia")
+            # Carrega dados específicos da unidade
+            unit_df = self.supabase_ops.get_table_data("matriz_treinamentos")
+
+            # Carrega dados globais (onde unit_id é NULL)
+            global_ops = SupabaseOperations(unit_id=None)
+            global_df = global_ops.get_table_data("matriz_treinamentos")
+            if not global_df.empty:
+                global_df = global_df[global_df['unit_id'].isnull()]
+
+            # Concatena e remove duplicatas
+            if unit_df is not None and global_df is not None:
+                combined_df = pd.concat([unit_df, global_df], ignore_index=True)
+                self._matrix_df = combined_df.drop_duplicates(subset=['id']).reset_index(drop=True)
+            elif unit_df is not None:
+                self._matrix_df = unit_df
+            elif global_df is not None:
+                self._matrix_df = global_df
             else:
-                logger.debug(f"Carregados {len(self._matrix_df)} mapeamentos")
+                self._matrix_df = pd.DataFrame(columns=self.columns_matrix)
+
+            if self._matrix_df.empty:
+                logger.info("Tabela 'matriz_treinamentos' está vazia para unidade e global.")
+            else:
+                logger.debug(f"Carregados {len(self._matrix_df)} mapeamentos (unidade e global)")
                 
         except Exception as e:
             logger.error(f"Erro ao carregar matriz: {e}")
