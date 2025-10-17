@@ -24,6 +24,8 @@ class SupabaseOperations:
             return
 
         self.unit_id = unit_id
+        if self.unit_id == 'global':
+            self.unit_id = None
         self.global_tables = ['usuarios', 'unidades', 'log_auditoria']
 
         # ✅ ADICIONAR: Whitelist de tabelas permitidas
