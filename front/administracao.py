@@ -710,6 +710,8 @@ def show_unit_admin_view():
                 # Carregar treinamentos já associados à função
                 required_trainings_raw = matrix_manager_unidade.get_required_trainings_for_function(selected_function_name)
                 
+                st.json(required_trainings_raw)
+
                 # Filtrar os treinamentos requeridos para garantir que eles existam na lista de disponíveis
                 required_trainings = [t for t in required_trainings_raw if t in available_trainings]
 
