@@ -65,60 +65,87 @@ def style_audit_table(row):
 def _run_analysis_and_audit(manager, analysis_method_name, uploader_key, doc_type_str, employee_id_key=None):
     """
     Função auxiliar que executa a análise de PDF e auditoria com IA.
-    
-    Args:
-        manager: Manager que contém o método de análise
-        analysis_method_name: Nome do método de análise (ex: 'analyze_aso_pdf')
-        uploader_key: Chave do uploader no session_state
-        doc_type_str: Tipo do documento (ex: 'ASO', 'Treinamento')
-        employee_id_key: Chave opcional do employee_id no session_state
     """
     if not st.session_state.get(uploader_key):
         return
-    
+
+    # ✅ Verificar se usuário tem plano antes de processar
+    from auth.auth_utils import get_user_email
+    from managers.matrix_manager import MatrixManager
+
+    user_email = get_user_email()
+    if user_email:
+        matrix_manager = MatrixManager()
+        user_info = matrix_manager.get_user_info(user_email)
+
+        if user_info:
+            user_role = user_info.get('role')
+            user_plan = user_info.get('plano')
+
+            # Admin sempre pode
+            if user_role != 'admin':
+                # Verificar se tem plano válido
+                if user_plan not in ['pro', 'premium_ia']:
+                    st.error("""
+                    ❌ **Análise com IA Não Disponível**
+
+                    Você não possui um plano ativo para usar esta funcionalidade.
+
+                    Entre em contato com o administrador para ativar:
+                    - **🚀 Plano Pro**: 10 análises/min, 250/dia
+                    - **💎 Plano Premium IA**: 5 análises/min, 100/dia
+                    """)
+                    # Limpa o uploader
+                    if uploader_key in st.session_state:
+                        del st.session_state[uploader_key]
+                    return
+
     anexo = st.session_state[uploader_key]
-    
+
     with st.spinner(f"🤖 Analisando {doc_type_str} com IA..."):
         # Chama o método de análise do manager
         analysis_method = getattr(manager, analysis_method_name)
         doc_info = analysis_method(anexo)
-        
+
         if not doc_info:
             st.error(f"❌ Não foi possível extrair informações do {doc_type_str}.")
             return
-        
+
         # Calcula hash do arquivo
         arquivo_hash = calcular_hash_arquivo(anexo)
-        
+
         # Executa auditoria se disponível
         audit_result = None
         if hasattr(st.session_state, 'nr_analyzer') and st.session_state.nr_analyzer:
             try:
                 with st.spinner("🔍 Executando auditoria de conformidade..."):
                     nr_analyzer = st.session_state.nr_analyzer
-                    
+
                     # Prepara informações para auditoria
                     audit_doc_info = {
                         "type": doc_type_str,
                         "norma": doc_info.get('norma', doc_info.get('tipo_documento', ''))
                     }
-                    
-                    audit_result = nr_analyzer.perform_initial_audit(audit_doc_info, anexo.getvalue())
-                    
+
+                    audit_result = nr_analyzer.perform_initial_audit(
+                        audit_doc_info,
+                        anexo.getvalue()
+                    )
+
                     if audit_result:
                         doc_info['audit_result'] = audit_result
                         st.success("✅ Auditoria concluída!")
             except Exception as e:
                 st.warning(f"⚠️ Auditoria não disponível: {str(e)}")
-        
+
         # Armazena no session_state
         st.session_state[f'{doc_type_str}_info_para_salvar'] = doc_info
         st.session_state[f'{doc_type_str}_anexo_para_salvar'] = anexo
         st.session_state[f'{doc_type_str}_hash_para_salvar'] = arquivo_hash
-        
+
         if employee_id_key and employee_id_key in st.session_state:
             st.session_state[f'{doc_type_str}_funcionario_para_salvar'] = st.session_state[employee_id_key]
-        
+
         st.success(f"✅ Análise de {doc_type_str} concluída!")
 
 def process_aso_pdf():

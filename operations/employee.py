@@ -40,16 +40,99 @@ class EmployeeManager:
         self._pdf_analyzer = None
         self.data_loaded_successfully = False
 
-        # ✅ PASSO 1: INICIALIZAR O NOVO MANAGER
         self.nr_rules_manager = NRRulesManager(self.unit_id)
 
-        self.load_data()
+        # ✅ MUDANÇA: Lazy loading - não carrega na inicialização
+        self._companies_df = None
+        self._employees_df = None
+        self._aso_df = None
+        self._training_df = None
+        
+        # NÃO chamar load_data() aqui
+        # self.load_data()
+
+    # ✅ NOVO: Properties para lazy loading
+    @property
+    def companies_df(self):
+        if self._companies_df is None:
+            self._load_companies()
+        return self._companies_df
+
+    @property
+    def employees_df(self):
+        if self._employees_df is None:
+            self._load_employees()
+        return self._employees_df
+
+    @property
+    def aso_df(self):
+        if self._aso_df is None:
+            self._load_asos()
+        return self._aso_df
+
+    @property
+    def training_df(self):
+        if self._training_df is None:
+            self._load_trainings()
+        return self._training_df
 
     @property
     def pdf_analyzer(self):
         if self._pdf_analyzer is None:
             self._pdf_analyzer = PDFQA()
         return self._pdf_analyzer
+
+    # ✅ NOVO: Métodos de carregamento individuais
+    def _load_companies(self):
+        try:
+            data = load_all_unit_data(self.unit_id)
+            self._companies_df = data.get('companies', pd.DataFrame())
+            if not self._companies_df.empty:
+                self._companies_df['id'] = self._companies_df['id'].astype(str)
+                self._companies_df.set_index('id', inplace=True, drop=False)
+        except Exception as e:
+            logger.error(f"Erro ao carregar empresas: {e}")
+            self._companies_df = pd.DataFrame()
+
+    def _load_employees(self):
+        try:
+            data = load_all_unit_data(self.unit_id)
+            self._employees_df = data.get('employees', pd.DataFrame())
+            if not self._employees_df.empty:
+                self._employees_df[['id', 'empresa_id']] = self._employees_df[
+                    ['id', 'empresa_id']
+                ].astype(str)
+                self._employees_df.set_index('id', inplace=True, drop=False)
+                self._employees_by_company = self._employees_df.groupby('empresa_id')
+        except Exception as e:
+            logger.error(f"Erro ao carregar funcionários: {e}")
+            self._employees_df = pd.DataFrame()
+
+    def _load_asos(self):
+        try:
+            data = load_all_unit_data(self.unit_id)
+            self._aso_df = data.get('asos', pd.DataFrame())
+            if not self._aso_df.empty:
+                self._aso_df[['id', 'funcionario_id']] = self._aso_df[
+                    ['id', 'funcionario_id']
+                ].astype(str)
+                self._asos_by_employee = self._aso_df.groupby('funcionario_id')
+        except Exception as e:
+            logger.error(f"Erro ao carregar ASOs: {e}")
+            self._aso_df = pd.DataFrame()
+
+    def _load_trainings(self):
+        try:
+            data = load_all_unit_data(self.unit_id)
+            self._training_df = data.get('trainings', pd.DataFrame())
+            if not self._training_df.empty:
+                self._training_df[['id', 'funcionario_id']] = self._training_df[
+                    ['id', 'funcionario_id']
+                ].astype(str)
+                self._trainings_by_employee = self._training_df.groupby('funcionario_id')
+        except Exception as e:
+            logger.error(f"Erro ao carregar treinamentos: {e}")
+            self._training_df = pd.DataFrame()
 
     def upload_documento_e_obter_link(self, arquivo, novo_nome: str):
         if not self.unit_id:
@@ -72,57 +155,8 @@ class EmployeeManager:
             return None
 
     def load_data(self):
-        try:
-            data = load_all_unit_data(self.unit_id)
-            if not data or not isinstance(data, dict):
-                logger.error("load_all_unit_data retornou dados inválidos")
-                self.data_loaded_successfully = False
-                return
-
-            required_keys = ['companies', 'employees', 'asos', 'trainings']
-            missing_keys = [key for key in required_keys if key not in data]
-            if missing_keys:
-                logger.error(f"Chaves faltando no retorno: {missing_keys}")
-                self.data_loaded_successfully = False
-                return
-
-            self.companies_df = data['companies'] if data.get('companies') is not None else pd.DataFrame()
-            self.employees_df = data['employees'] if data.get('employees') is not None else pd.DataFrame()
-            self.aso_df = data['asos'] if data.get('asos') is not None else pd.DataFrame()
-            self.training_df = data['trainings'] if data.get('trainings') is not None else pd.DataFrame()
-
-            # ✅ CORREÇÃO: Padroniza todas as colunas de ID para string para evitar erros de tipo.
-            id_cols_map = {
-                'companies_df': ['id'],
-                'employees_df': ['id', 'empresa_id'],
-                'aso_df': ['id', 'funcionario_id'],
-                'training_df': ['id', 'funcionario_id']
-            }
-            for df_name, cols in id_cols_map.items():
-                df = getattr(self, df_name)
-                if not df.empty:
-                    for col in cols:
-                        if col in df.columns:
-                            df[col] = df[col].astype(str)
-
-            if not self.companies_df.empty:
-                self.companies_df.set_index('id', inplace=True, drop=False)
-
-            if not self.employees_df.empty:
-                self.employees_df.set_index('id', inplace=True, drop=False)
-                self._employees_by_company = self.employees_df.groupby('empresa_id')
-
-            if not self.aso_df.empty:
-                self._asos_by_employee = self.aso_df.groupby('funcionario_id')
-
-            if not self.training_df.empty:
-                self._trainings_by_employee = self.training_df.groupby('funcionario_id')
-
-            self.data_loaded_successfully = True
-
-        except Exception as e:
-            logger.error(f"Erro no load_data: {e}", exc_info=True)
-            self.data_loaded_successfully = False
+        """Mantido para compatibilidade - agora apenas seta flag"""
+        self.data_loaded_successfully = True
 
     def _parse_flexible_date(self, date_string: str) -> date | None:
         try:

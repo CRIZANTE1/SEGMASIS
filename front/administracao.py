@@ -196,63 +196,176 @@ def handle_user_dialog(matrix_manager):
         user_data = st.session_state.get('user_to_edit')
         is_edit = user_data is not None
 
-        @st.dialog("Gerenciar Usuário", on_dismiss=lambda: st.session_state.pop('show_user_dialog', None))
+        @st.dialog("Gerenciar Usuário", width="large")
         def user_form():
             st.subheader("Editar Usuário" if is_edit else "Adicionar Novo Usuário")
-            
+
             all_units = matrix_manager.get_all_units()
             unit_map = {str(unit['id']): unit['nome_unidade'] for unit in all_units}
             unit_options = ['*'] + list(unit_map.keys())
-            
+
             def format_unit_display(unit_id):
-                if unit_id == '*': return "Global (Super Admin)"
+                if unit_id == '*':
+                    return "Global (Super Admin)"
                 return unit_map.get(unit_id, f"ID: {unit_id}")
 
             with st.form("user_form_dialog"):
-                email = st.text_input("E-mail", value=user_data['email'] if is_edit else "", disabled=is_edit)
-                nome = st.text_input("Nome", value=user_data['nome'] if is_edit else "")
-                
+                email = st.text_input(
+                    "E-mail",
+                    value=user_data['email'] if is_edit else "",
+                    disabled=is_edit
+                )
+                nome = st.text_input(
+                    "Nome",
+                    value=user_data['nome'] if is_edit else ""
+                )
+
                 roles = ["admin", "editor", "viewer"]
                 current_role = user_data.get('role', 'viewer') if is_edit else 'viewer'
-                role = st.selectbox("Perfil (Role)", roles, index=roles.index(current_role))
-                
-                current_unit = str(user_data.get('unidade_associada', '*')) if is_edit else '*'
-                unidade_associada = st.selectbox("Unidade/Empresa Associada", options=unit_options, index=unit_options.index(current_unit), format_func=format_unit_display)
+                role = st.selectbox(
+                    "Perfil (Role)",
+                    roles,
+                    index=roles.index(current_role)
+                )
 
-                st.markdown("---"); st.subheader("Assinatura e Plano")
+                current_unit = str(user_data.get('unidade_associada', '*')) if is_edit else '*'
+                unidade_associada = st.selectbox(
+                    "Unidade/Empresa Associada",
+                    options=unit_options,
+                    index=unit_options.index(current_unit),
+                    format_func=format_unit_display
+                )
+
+                st.markdown("---")
+                st.subheader("🤖 Assinatura e Acesso à IA")
+
                 if unidade_associada == '*':
-                    st.info("O Super Administrador tem acesso total por padrão.")
+                    st.success("""
+                    ✅ **Super Administrador**
+
+                    Acesso ilimitado a todos os recursos:
+                    - Gemini 2.5 Flash (extrações)
+                    - Gemini 2.5 Pro (auditorias)
+                    - Sem limites de requisições
+                    """)
                     plano, status_assinatura, data_fim_trial = None, None, None
                 else:
+                    st.info("""
+                    Escolha o plano de IA para este usuário:
+
+                    **🚀 Pro** - Gemini 2.5 Flash
+                    - 10 análises/minuto
+                    - 250 análises/dia
+                    - Ideal para extração rápida de dados
+
+                    **💎 Premium IA** - Gemini 2.5 Pro
+                    - 5 análises/minuto
+                    - 100 análises/dia
+                    - Ideal para auditorias complexas
+                    """)
+
+                    # ✅ Apenas 2 opções de plano
                     plan_options = ["pro", "premium_ia"]
+                    plan_labels = {
+                        "pro": "🚀 Pro - Flash (10/min, 250/dia)",
+                        "premium_ia": "💎 Premium IA - Pro (5/min, 100/dia)"
+                    }
+
                     current_plan = user_data.get('plano', 'pro') if is_edit else 'pro'
-                    plano = st.selectbox("Plano de Assinatura:", plan_options, index=plan_options.index(current_plan))
+
+                    # Garantir que o plano atual seja válido
+                    if current_plan not in plan_options:
+                        current_plan = 'pro'
+
+                    plano_selected = st.selectbox(
+                        "Plano de IA:",
+                        plan_options,
+                        index=plan_options.index(current_plan),
+                        format_func=lambda x: plan_labels[x]
+                    )
+
+                    plano = plano_selected
 
                     status_options = ["ativo", "inativo", "trial", "cancelado"]
                     current_status = user_data.get('status_assinatura', 'inativo') if is_edit else 'inativo'
-                    status_assinatura = st.selectbox("Status da Assinatura:", status_options, index=status_options.index(current_status))
+                    status_assinatura = st.selectbox(
+                        "Status da Assinatura:",
+                        status_options,
+                        index=status_options.index(current_status)
+                    )
 
-                    data_fim_trial_val = pd.to_datetime(user_data.get('data_fim_trial')).date() if is_edit and pd.notna(user_data.get('data_fim_trial')) else None
-                    data_fim_trial = st.date_input("Data de Fim do Trial (se aplicável):", value=data_fim_trial_val)
+                    data_fim_trial_val = None
+                    if is_edit and pd.notna(user_data.get('data_fim_trial')):
+                        data_fim_trial_val = pd.to_datetime(user_data.get('data_fim_trial')).date()
 
-                if st.form_submit_button("Salvar"):
+                    data_fim_trial = st.date_input(
+                        "Data de Fim do Trial (se aplicável):",
+                        value=data_fim_trial_val
+                    )
+
+                    # ✅ Mostrar limites do plano selecionado
+                    if plano == 'pro':
+                        st.success("""
+                        **Limites do Plano Pro:**
+                        - ⚡ 10 análises por minuto
+                        - 📊 250 análises por dia
+                        - 🤖 Modelo: Gemini 2.5 Flash
+                        """)
+                    else:
+                        st.success("""
+                        **Limites do Plano Premium IA:**
+                        - ⚡ 5 análises por minuto
+                        - 📊 100 análises por dia
+                        - 🤖 Modelo: Gemini 2.5 Pro
+                        """)
+
+                st.markdown("---")
+
+                col_save, col_cancel = st.columns([3, 1])
+
+                with col_save:
+                    save_button = st.form_submit_button(
+                        "💾 Salvar",
+                        type="primary",
+                        use_container_width=True
+                    )
+
+                with col_cancel:
+                    cancel_button = st.form_submit_button(
+                        "❌ Cancelar",
+                        use_container_width=True
+                    )
+
+                if cancel_button:
+                    del st.session_state.show_user_dialog
+                    st.rerun()
+
+                if save_button:
                     email_to_save = email if not is_edit else user_data['email']
                     if not email_to_save.strip() or not nome.strip():
-                        st.error("E-mail e Nome são obrigatórios."); return
+                        st.error("E-mail e Nome são obrigatórios.")
+                        return
 
                     form_data = {
-                        "nome": nome, "role": role, "unidade_associada": unidade_associada,
-                        "plano": plano, "status_assinatura": status_assinatura,
+                        "nome": nome,
+                        "role": role,
+                        "unidade_associada": unidade_associada,
+                        "plano": plano,
+                        "status_assinatura": status_assinatura,
                         "data_fim_trial": data_fim_trial.isoformat() if data_fim_trial else None
                     }
-                    if not is_edit: form_data['email'] = email_to_save
+
+                    if not is_edit:
+                        form_data['email'] = email_to_save
 
                     success = matrix_manager.update_user(user_data['id'], form_data) if is_edit else matrix_manager.add_user(form_data)
-                    
+
                     if success:
-                        st.toast("Operação realizada com sucesso!"); st.session_state.pop('show_user_dialog', None); st.rerun()
+                        st.toast("✅ Operação realizada com sucesso!")
+                        del st.session_state.show_user_dialog
+                        st.rerun()
                     else:
-                        st.error("Falha ao salvar. Verifique se o e-mail já existe.")
+                        st.error("❌ Falha ao salvar. Verifique se o e-mail já existe.")
         user_form()
 
 def handle_delete_dialog(matrix_manager):
@@ -321,14 +434,15 @@ def show_super_admin_view():
     pending_requests = matrix_manager.get_pending_access_requests()
     pending_count = len(pending_requests)
 
-    tab_dashboard, tab_requests, tab_users, tab_provision, tab_matrix, tab_rules, tab_audit = st.tabs([
+    tab_dashboard, tab_requests, tab_users, tab_provision, tab_matrix, tab_rules, tab_audit, tab_api_usage = st.tabs([
         f"📊 Dashboard Global",
         f"📬 Solicitações de Acesso ({pending_count})" if pending_count > 0 else "📬 Solicitações de Acesso",
         "👤 Gerenciar Usuários",
         "🚀 Provisionar Cliente",
         "🏗️ Matriz Global",
         "📜 Regras de Conformidade",
-        "🛡️ Logs de Auditoria"
+        "🛡️ Logs de Auditoria",
+        "🤖 Uso de API"  # ✅ NOVA ABA
     ])
 
     with tab_dashboard:
@@ -446,7 +560,157 @@ def show_super_admin_view():
             st.dataframe(logs_df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum registro de log encontrado.")
-            
+
+    # ✅ NOVA ABA: Monitoramento de uso de API
+    with tab_api_usage:
+        st.header("🤖 Monitoramento de Uso da API de IA")
+
+        st.info("""
+        **Limites da API Gemini:**
+        - 🚀 **Pro** (Flash): 10 req/min, 250 req/dia
+        - 💎 **Premium IA** (Pro): 5 req/min, 100 req/dia
+        - 👑 **Admin**: Ilimitado
+        """)
+
+        # Buscar todos os usuários
+        users = matrix_manager.get_all_users()
+
+        if not users:
+            st.warning("Nenhum usuário cadastrado.")
+            return
+
+        users_df = pd.DataFrame(users)
+
+        # Calcular estatísticas
+        total_users = len(users_df)
+        admin_users = len(users_df[users_df['role'] == 'admin'])
+        pro_users = len(users_df[users_df['plano'] == 'pro'])
+        premium_users = len(users_df[users_df['plano'] == 'premium_ia'])
+        no_plan_users = len(users_df[
+            (users_df['role'] != 'admin') &
+            (~users_df['plano'].isin(['pro', 'premium_ia']))
+        ])
+
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        col1.metric("👥 Total", total_users)
+        col2.metric("👑 Admin", admin_users)
+        col3.metric("🚀 Pro", pro_users)
+        col4.metric("💎 Premium", premium_users)
+        col5.metric("❌ Sem Plano", no_plan_users, delta_color="inverse")
+
+        st.markdown("---")
+
+        # Capacidade total do sistema
+        st.subheader("📊 Capacidade Total do Sistema")
+
+        pro_rpm = pro_users * 10
+        pro_rpd = pro_users * 250
+        premium_rpm = premium_users * 5
+        premium_rpd = premium_users * 100
+
+        col_cap1, col_cap2 = st.columns(2)
+
+        with col_cap1:
+            st.markdown("##### ⚡ Capacidade por Minuto")
+            st.markdown(f"""
+            - **Pro (Flash):** {pro_rpm} req/min ({pro_users} usuários × 10)
+            - **Premium IA (Pro):** {premium_rpm} req/min ({premium_users} usuários × 5)
+            - **Total:** {pro_rpm + premium_rpm} req/min
+            - **Admin:** Ilimitado
+            """)
+
+        with col_cap2:
+            st.markdown("##### 📅 Capacidade Diária")
+            st.markdown(f"""
+            - **Pro (Flash):** {pro_rpd:,} req/dia ({pro_users} usuários × 250)
+            - **Premium IA (Pro):** {premium_rpd:,} req/dia ({premium_users} usuários × 100)
+            - **Total:** {pro_rpd + premium_rpd:,} req/dia
+            - **Admin:** Ilimitado
+            """)
+
+        st.markdown("---")
+
+        # Lista detalhada de usuários
+        st.subheader("👥 Limites por Usuário")
+
+        def get_limit_info(row):
+            if row['role'] == 'admin':
+                return {
+                    'rpm': '♾️ Ilimitado',
+                    'rpd': '♾️ Ilimitado',
+                    'modelo': 'Flash + Pro',
+                    'status_icon': '👑'
+                }
+
+            plan = row.get('plano')
+            status = row.get('status_assinatura', 'inativo')
+
+            if status != 'ativo' and status != 'trial':
+                return {
+                    'rpm': '❌ Inativo',
+                    'rpd': '❌ Inativo',
+                    'modelo': '-',
+                    'status_icon': '❌'
+                }
+
+            if plan == 'premium_ia':
+                return {
+                    'rpm': '5/min',
+                    'rpd': '100/dia',
+                    'modelo': 'Gemini Pro',
+                    'status_icon': '💎'
+                }
+            elif plan == 'pro':
+                return {
+                    'rpm': '10/min',
+                    'rpd': '250/dia',
+                    'modelo': 'Gemini Flash',
+                    'status_icon': '🚀'
+                }
+            else:
+                return {
+                    'rpm': '❌ Sem plano',
+                    'rpd': '❌ Sem plano',
+                    'modelo': '-',
+                    'status_icon': '⚠️'
+                }
+
+        limit_info = users_df.apply(get_limit_info, axis=1, result_type='expand')
+        users_df = pd.concat([users_df, limit_info], axis=1)
+
+        st.dataframe(
+            users_df[[
+                'status_icon', 'nome', 'email', 'role',
+                'modelo', 'rpm', 'rpd', 'status_assinatura'
+            ]],
+            column_config={
+                'status_icon': st.column_config.TextColumn('', width='small'),
+                'nome': 'Nome',
+                'email': 'Email',
+                'role': 'Perfil',
+                'modelo': '🤖 Modelo',
+                'rpm': '⚡ Por Minuto',
+                'rpd': '📊 Por Dia',
+                'status_assinatura': 'Status'
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.markdown("---")
+
+        # Alertas e recomendações
+        st.subheader("⚠️ Alertas e Recomendações")
+
+        if no_plan_users > 0:
+            st.warning(f"""
+            **{no_plan_users} usuário(s) sem plano de IA**
+
+            Estes usuários não podem usar as funcionalidades de análise com IA.
+            Recomendação: Atribua um plano (Pro ou Premium IA) para eles.
+            """)
+
     handle_user_dialog(matrix_manager)
     handle_delete_dialog(matrix_manager)
 
