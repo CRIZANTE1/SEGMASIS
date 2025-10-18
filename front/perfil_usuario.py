@@ -42,7 +42,7 @@ def show_profile_page():
             new_name = st.text_input("Nome Completo *", value=user_name)
             st.text_input("Email", value=user_email, disabled=True)
 
-            if st.form_submit_button(" Salvar Alterações", type="primary", use_container_width=True):
+            if st.form_submit_button(" Salvar Alterações", type="primary", width='stretch'):
                 if new_name and new_name.strip():
                     updates = {'nome': new_name.strip()}
                     if matrix_manager.update_user(user_info['id'], updates):
@@ -199,7 +199,7 @@ def show_profile_page():
                 ]
             })
 
-            st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+            st.dataframe(comparison_df, width='stretch', hide_index=True)
 
             # ✅ Botão de upgrade
             if current_plan == 'pro':
@@ -277,7 +277,7 @@ def show_profile_page():
             subject = st.text_input("Assunto *", placeholder="Descreva brevemente sua solicitação")
             message = st.text_area("Descrição Detalhada *", height=150)
             
-            if st.form_submit_button(" Enviar Solicitação", type="primary", use_container_width=True):
+            if st.form_submit_button(" Enviar Solicitação", type="primary", width='stretch'):
                 if subject.strip() and message.strip():
                     try:
                         from operations.supabase_operations import SupabaseOperations

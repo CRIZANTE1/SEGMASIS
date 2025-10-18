@@ -56,7 +56,7 @@ def handle_delete_confirmation(docs_manager, employee_manager):
             st.info(f"**Tipo:** {item_info['type']}\n\n**ID:** {item_info['id']}")
             
             col1, col2 = st.columns(2)
-            if col1.button("✅ Sim, Excluir", type="primary", use_container_width=True):
+            if col1.button("✅ Sim, Excluir", type="primary", width='stretch'):
                 success = False
                 if item_info['type'] == 'ASO':
                     success = employee_manager.delete_aso(item_info['id'], item_info.get('file_url'))
@@ -76,7 +76,7 @@ def handle_delete_confirmation(docs_manager, employee_manager):
                 else:
                     st.error("❌ Falha ao excluir o item.")
             
-            if col2.button("❌ Cancelar", use_container_width=True):
+            if col2.button("❌ Cancelar", width='stretch'):
                 del st.session_state.show_delete_dialog
                 del st.session_state.item_to_delete
                 st.rerun()

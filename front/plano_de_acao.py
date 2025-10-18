@@ -221,7 +221,7 @@ def show_plano_acao_page():
                 if doc_id:
                     doc_link = get_document_link(doc_id, employee_manager, docs_manager)
                     if doc_link:
-                        st.link_button("📄 Ver PDF", doc_link, use_container_width=True)
+                        st.link_button("📄 Ver PDF", doc_link, width='stretch')
             
             # Descrição da não conformidade
             st.markdown("#### 📌 Não Conformidade")
@@ -284,9 +284,9 @@ def show_plano_acao_page():
                     col_ev1, col_ev2 = st.columns([3, 1])
                     with col_ev1:
                         st.markdown("**📎 Evidência Anexada:**")
-                        st.link_button("📄 Ver Evidência", evidencia_url, use_container_width=True)
+                        st.link_button("📄 Ver Evidência", evidencia_url, width='stretch')
                     with col_ev2:
-                        if st.button("🗑️ Remover", key=f"remove_ev_{row['id']}", use_container_width=True):
+                        if st.button("🗑️ Remover", key=f"remove_ev_{row['id']}", width='stretch'):
                             success, msg = action_plan_manager.delete_evidencia(str(row['id']))
                             if success:
                                 st.success(msg)
@@ -312,7 +312,7 @@ def show_plano_acao_page():
             col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([2, 1, 1, 1])  # ✅ MODIFICAR: 4 colunas
 
             with col_btn1:
-                if st.button("✏️ Editar Item", key=f"treat_{row['id']}", use_container_width=True, type="primary"):
+                if st.button("✏️ Editar Item", key=f"treat_{row['id']}", width='stretch', type="primary"):
                     st.session_state.current_item_to_treat = row.to_dict()
                     st.rerun()
 
@@ -324,12 +324,12 @@ def show_plano_acao_page():
                         st.button(
                             "✅ Concluir",
                             key=f"complete_{row['id']}",
-                            use_container_width=True,
+                            width='stretch',
                             disabled=True,
                             help="⚠️ Defina um plano de ação primeiro"
                         )
                     else:
-                        if st.button("✅ Concluir", key=f"complete_{row['id']}", use_container_width=True):
+                        if st.button("✅ Concluir", key=f"complete_{row['id']}", width='stretch'):
                             with st.spinner("Concluindo item..."):
                                 updates = {
                                     'status': 'Concluído',
@@ -351,13 +351,13 @@ def show_plano_acao_page():
             # ✅ ADICIONAR: Botão de evidência
             with col_btn3:
                 if row.get('status', '').lower() not in ['concluído', 'cancelado']:
-                    if st.button("📎 Evidência", key=f"evidence_{row['id']}", use_container_width=True):
+                    if st.button("📎 Evidência", key=f"evidence_{row['id']}", width='stretch'):
                         st.session_state.show_evidence_dialog = True
                         st.session_state.evidence_item_id = row['id']
                         st.rerun()
 
             with col_btn4:
-                if st.button("🗑️ Excluir", key=f"delete_{row['id']}", use_container_width=True):
+                if st.button("🗑️ Excluir", key=f"delete_{row['id']}", width='stretch'):
                     st.session_state.show_delete_action_item = True
                     st.session_state.action_item_to_delete = row['id']
                     st.rerun()
@@ -459,13 +459,13 @@ def show_treatment_dialog(action_plan_manager):
                 save_button = st.form_submit_button(
                     "💾 Salvar Alterações",
                     type="primary",
-                    use_container_width=True
+                    width='stretch'
                 )
-            
+
             with col_cancel:
                 cancel_button = st.form_submit_button(
                     "❌ Cancelar",
-                    use_container_width=True
+                    width='stretch'
                 )
             
             if cancel_button:
@@ -517,12 +517,12 @@ def show_delete_dialog(action_plan_manager):
         
         col1, col2 = st.columns(2)
         
-        if col1.button("✅ Sim, Excluir", type="primary", use_container_width=True):
+        if col1.button("✅ Sim, Excluir", type="primary", width='stretch'):
             # Implementar lógica de exclusão quando o método estiver disponível
             from operations.supabase_operations import SupabaseOperations
             unit_id = st.session_state.get('unit_id')
             supabase_ops = SupabaseOperations(unit_id)
-            
+
             if supabase_ops.delete_row("plano_acao", str(item_id)):
                 st.success("✅ Item excluído com sucesso!")
                 del st.session_state.show_delete_action_item
@@ -530,8 +530,8 @@ def show_delete_dialog(action_plan_manager):
                 st.rerun()
             else:
                 st.error("❌ Falha ao excluir o item.")
-        
-        if col2.button("❌ Cancelar", use_container_width=True):
+
+        if col2.button("❌ Cancelar", width='stretch'):
             del st.session_state.show_delete_action_item
             del st.session_state.action_item_to_delete
             st.rerun()
@@ -561,7 +561,7 @@ def show_evidence_dialog(action_plan_manager):
 
         col1, col2 = st.columns(2)
 
-        if col1.button("📤 Fazer Upload", type="primary", use_container_width=True, disabled=not arquivo):
+        if col1.button("📤 Fazer Upload", type="primary", width='stretch', disabled=not arquivo):
             if arquivo:
                 with st.spinner("Fazendo upload..."):
                     success, msg = action_plan_manager.upload_evidencia(item_id, arquivo)
@@ -581,7 +581,7 @@ def show_evidence_dialog(action_plan_manager):
                     else:
                         st.error(msg)
 
-        if col2.button("❌ Cancelar", use_container_width=True):
+        if col2.button("❌ Cancelar", width='stretch'):
             del st.session_state.show_evidence_dialog
             del st.session_state.evidence_item_id
             st.rerun()

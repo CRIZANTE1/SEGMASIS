@@ -20,7 +20,7 @@ def show_access_denied_page():
 
     col1, col2 = st.columns([1.5, 1])
     with col2:
-        if st.button(" Sair / Trocar de Conta", use_container_width=True):
+        if st.button(" Sair / Trocar de Conta", width='stretch'):
             try:
                 st.logout()
             except Exception:

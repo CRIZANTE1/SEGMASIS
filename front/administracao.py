@@ -53,7 +53,7 @@ def show_compliance_rules_management(matrix_manager: GlobalMatrixManager):
         st.subheader("📋 Regras Configuradas")
         col_add1, col_add2 = st.columns([3, 1])
         with col_add1:
-            if st.button("➕ Nova Regra Global", use_container_width=True, type="primary"):
+            if st.button("➕ Nova Regra Global", width='stretch', type="primary"):
                 st.session_state.show_rule_dialog = True
                 st.session_state.rule_to_edit = None
                 st.session_state.target_unit_id = None
