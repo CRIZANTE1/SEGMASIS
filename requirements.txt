@@ -1,0 +1,25 @@
+streamlit
+numpy>=1.24.0
+plotly>=5.18.0
+pandas
+openpyxl==3.1.2
+authlib
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
+google-api-python-client
+python-dotenv==1.0.1
+google-generativeai>=0.3.2
+python-dateutil
+fuzzywuzzy
+python-Levenshtein
+pyyaml
+streamlit-option-menu
+# ✅ MUDANÇA: PostgreSQL direto
+psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
+# ✅ MANTÉM: API REST apenas para Storage
+supabase>=2.0.0
+postgrest>=0.10.0
+scikit-learn
+# Trigger rebuild

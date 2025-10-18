@@ -1,0 +1,470 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import google.generativeai as genai
+from google.generativeai.client import configure
+from google.generativeai.generative_models import GenerativeModel
+import re
+import json
+import tempfile
+import os
+import random
+from datetime import datetime
+from typing import Optional
+from sklearn.metrics.pairwise import cosine_similarity
+from AI.api_Operation import PDFQA
+from operations.supabase_operations import SupabaseOperations
+import logging
+
+logger = logging.getLogger(__name__)
+
+def validate_managers(manager_dict: dict) -> Optional[str]:
+    """
+    Valida se todos os managers necessários estão presentes e inicializados corretamente.
+    
+    Args:
+        manager_dict: Dicionário contendo os managers a serem validados.
+        
+    Returns:
+        None se tudo estiver ok, ou mensagem de erro se houver problema.
+    """
+    required_managers = ['supabase_ops', 'pdf_analyzer']
+    
+    # Verifica se todos os managers necessários estão presentes
+    for manager in required_managers:
+        if manager not in manager_dict:
+            return f"Manager '{manager}' não encontrado"
+        if manager_dict[manager] is None:
+            return f"Manager '{manager}' não foi inicializado"
+            
+    # Verifica tipos específicos
+    if not isinstance(manager_dict['supabase_ops'], SupabaseOperations):
+        return "SupabaseOperations não inicializado corretamente"
+    if not isinstance(manager_dict['pdf_analyzer'], PDFQA):
+        return "PDFQA não inicializado corretamente"
+            
+    return None
+
+
+
+class NRAnalyzer:
+    _rag_cache = None
+    _rag_cache_time = None
+    RAG_CACHE_TTL = 3600  # 1 hora
+    
+    @classmethod
+    def _get_rag_base(cls):
+        """Carrega RAG com cache de classe (não de sessão)"""
+        import time
+        
+        now = time.time()
+        
+        # Verifica se o cache ainda é válido
+        if (cls._rag_cache is not None and 
+            cls._rag_cache_time is not None and 
+            (now - cls._rag_cache_time) < cls.RAG_CACHE_TTL):
+            return cls._rag_cache
+        
+        # Carrega dados
+        try:
+            df = pd.read_pickle("rag_dataframe.pkl")
+            embeddings = np.load("rag_embeddings.npy")
+            cls._rag_cache = (df, embeddings)
+            cls._rag_cache_time = now
+            return cls._rag_cache
+        except Exception as e:
+            logger.error(f"Erro ao carregar RAG: {e}")
+            return None, None
+
+    def __init__(self, unit_id: Optional[str]):
+        """
+        Inicialização que carrega a base RAG e lida com as mensagens de UI.
+        
+        Args:
+            unit_id: ID da unidade para operações com Supabase
+        """
+        self.unit_id = unit_id
+        
+        # Managers
+        self._pdf_analyzer = None
+        self.supabase_ops = None  # Será inicializado após validação
+        
+        # Cache de dados
+        self._page_id_map = None
+        self.df = None  # Será carregado após validação
+        self.embeddings = None
+        
+        # Validação inicial
+        self._initialize_managers()
+        
+        # Setup de bibliotecas
+        configure(api_key=os.getenv("GEMINI_API_KEY"))
+        
+    def _initialize_managers(self):
+        """
+        Inicializa e valida todos os managers necessários.
+        Levanta RuntimeError se houver falha na inicialização.
+        """
+        try:
+            if self.unit_id is None:
+                raise ValueError("unit_id não pode ser None")
+                
+            # Tenta inicializar o Supabase
+            try:
+                self.supabase_ops = SupabaseOperations(unit_id=self.unit_id)
+                if not self.supabase_ops:
+                    raise RuntimeError("SupabaseOperations retornou None")
+            except Exception as e:
+                logger.error(f"Falha crítica ao inicializar Supabase: {e}")
+                self.supabase_ops = None  # Garante que está definido
+                raise
+            
+            # Inicializa o PDF Analyzer
+            self._pdf_analyzer = PDFQA()
+            
+            # Carrega os dados RAG
+            self.df, self.embeddings = self._get_rag_base()
+            
+            # Valida todos os managers
+            managers = {
+                'supabase_ops': self.supabase_ops,
+                'pdf_analyzer': self._pdf_analyzer
+            }
+            
+            validation_error = validate_managers(managers)
+            if validation_error:
+                st.error(f"❌ Erro de inicialização: {validation_error}")
+                raise RuntimeError(validation_error)
+                
+        except Exception as e:
+            logger.error(f"Erro ao inicializar managers: {str(e)}")
+            st.error("❌ Falha ao inicializar componentes necessários")
+            raise RuntimeError("Falha na inicialização dos managers")
+
+    def _find_semantically_relevant_chunks(self, query_text: str, top_k: int = 5) -> str:
+        """
+        Busca chunks de texto semanticamente relevantes na base de conhecimento.
+        
+        Args:
+            query_text: Texto da consulta
+            top_k: Número de chunks a retornar
+            
+        Returns:
+            String com os chunks mais relevantes ou mensagem de erro
+        """
+        # Valida a base de dados
+        if self.df is None or self.df.empty or self.embeddings is None or self.embeddings.size == 0:
+            logger.error("Base de conhecimento não encontrada ou vazia")
+            return "Base de conhecimento indisponível ou não indexada."
+
+        try:
+            try:
+                from google.generativeai import embed_content
+                
+                result = embed_content(
+                    model="models/text-embedding-004",
+                    content=query_text,
+                    task_type="retrieval_query"
+                )
+            except ImportError:
+                logger.error("Falha ao importar embed_content do google.generativeai")
+                return "Erro: módulo de embeddings não disponível" 
+            
+            query_embedding = np.array(result['embedding']).reshape(1, -1)
+            
+            # Calcula similaridade
+            similarities = cosine_similarity(query_embedding, self.embeddings)[0]
+            top_k_indices = similarities.argsort()[-top_k:][::-1]
+            relevant_chunks = self.df.iloc[top_k_indices]
+            
+            if 'Answer_Chunk' not in relevant_chunks.columns:
+                logger.error("Coluna 'Answer_Chunk' não encontrada")
+                return "Erro na estrutura da base de conhecimento"
+            
+            return "\n\n---\n\n".join(relevant_chunks['Answer_Chunk'].tolist())
+            
+        except Exception as e:
+            logger.error(f"Erro durante busca semântica: {str(e)}")
+            return "Erro ao buscar chunks relevantes."
+            
+    def perform_initial_audit(self, doc_info: dict, file_content: bytes) -> dict | None:
+        """
+        Corrigindo para garantir que doc_info tenha norma
+        """
+        doc_type = doc_info.get("type", "documento")
+        norma = doc_info.get("norma", "")
+        
+        # Para ASOs e Documentos de Empresa que não têm norma específica
+        if not norma and doc_type in ["ASO", "Doc. Empresa"]:
+            if doc_type == "ASO":
+                norma = "NR-07"
+            elif doc_type == "Doc. Empresa":
+                # Tenta identificar a norma pelo tipo de documento
+                doc_subtype = doc_info.get("tipo_documento", "").upper()
+                if "PGR" in doc_subtype:
+                    norma = "NR-01"
+                elif "PCMSO" in doc_subtype:
+                    norma = "NR-07"
+                elif "PPR" in doc_subtype:
+                    norma = "NR-09"
+                else:
+                    norma = "normas aplicáveis"
+        
+        query = f"Quais são os principais requisitos de conformidade para um {doc_type} da norma {norma}?"
+        
+        relevant_knowledge = self._find_semantically_relevant_chunks(query, top_k=7)
+        
+        if "Base de conhecimento indisponível" in relevant_knowledge:
+             return {"summary": "Falha na Auditoria", "details": [{"item_verificacao": "Base de conhecimento indisponível.", "status": "Não Conforme"}]}
+
+        prompt = self._get_advanced_audit_prompt(doc_info, relevant_knowledge)
+        
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
+                temp_file.write(file_content)
+                temp_path = temp_file.name
+            if not self._pdf_analyzer:
+                raise ValueError("PDF Analyzer não foi inicializado")
+            analysis_result, _ = self._pdf_analyzer.answer_question([temp_path], prompt, task_type='audit')
+            return self._parse_advanced_audit_result(analysis_result) if analysis_result else None
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+    def _get_advanced_audit_prompt(self, doc_info: dict, relevant_knowledge: str) -> str:
+        doc_type = doc_info.get("type", "documento")
+        norma = doc_info.get("norma", "normas aplicáveis")
+        data_atual = datetime.now().strftime('%d/%m/%Y')
+
+        checklist_instrucoes = ""
+        json_example = ""
+
+        if doc_type == "PGR" or norma == "NR-01":
+            checklist_instrucoes = """
+            **Checklist de Auditoria Crítica para PGR (NR-01) - NÃO ACEITE RESPOSTAS SUPERFICIAIS:**
+            
+            1.  **Inventário de Riscos (Qualidade vs. Presença):**
+                *   NÃO BASTA TER A SEÇÃO. O inventário deve, para cada risco, apresentar uma **avaliação**, indicando o **nível de risco** (ex: baixo, médio, alto) baseado em critérios de **severidade e probabilidade** (NR 01, item 1.5.4.4.2).
+                *   Verifique se os riscos são específicos para as funções/atividades da empresa e não genéricos.
+                *   **REGRA:** Se o documento apresentar apenas uma lista de riscos sem uma classificação clara de nível de risco, considere o item **'Inventário de Riscos incompleto' como 'Não Conforme'**.
+
+            2.  **Plano de Ação (Estrutura vs. Lista):**
+                *   NÃO BASTA TER A SEÇÃO. O plano de ação deve conter um **cronograma** com datas ou prazos definidos e **responsáveis** pelas ações (NR 01, item 1.5.5.2.2).
+                *   As ações devem ser específicas para os riscos identificados, e não apenas itens genéricos como "Atualização anual do PGR".
+                *   **REGRA:** Se o plano de ação for uma lista de tópicos sem cronograma e responsáveis, considere o item **'Plano de Ação não estruturado' como 'Não Conforme'**.
+
+            3.  **Procedimentos de Emergência:**
+                *   Verifique se o documento descreve, mesmo que minimamente, os procedimentos de resposta a emergências (NR 01, item 1.5.6.1).
+                *   **REGRA:** Se não houver menção a como responder a emergências, considere o item **'Ausência de plano de emergência' como 'Não Conforme'**.
+                
+            4.  **Vigência e Assinaturas:**
+                *   Verifique se o documento tem data de emissão e assinatura do responsável.
+                *   A data de emissão/aprovação NÃO PODE ser futura em relação à data da auditoria.
+            """
+            json_example = """
+              "resumo_executivo": "O PGR apresentado é fundamentalmente inadequado, pois não cumpre os requisitos estruturais básicos da NR-01. O documento falha em avaliar os riscos e em apresentar um plano de ação com cronograma, sendo pouco mais que uma declaração de intenções.",
+              "pontos_de_nao_conformidade": [
+                {
+                  "item": "Inventário de Riscos incompleto (sem avaliação de nível de risco)",
+                  "referencia_normativa": "NR-01, item 1.5.4.4.2",
+                  "observacao": "Na página 2, a seção 'Inventário de Riscos' apenas lista agentes de risco. Falta a avaliação da combinação de severidade e probabilidade para determinar o nível de risco, o que é um pilar do gerenciamento de riscos."
+                },
+                {
+                  "item": "Plano de Ação não estruturado (sem cronograma e responsáveis)",
+                  "referencia_normativa": "NR-01, item 1.5.5.2.2",
+                  "observacao": "Na página 2, o 'Plano de Ação' apresenta uma lista de atividades genéricas sem definir um cronograma para sua implementação ou atribuir responsáveis, o que o descaracteriza como um plano acionável."
+                }
+              ]
+            """
+        
+        elif doc_type == "Treinamento":
+            checklist_instrucoes = f"""
+            **Checklist de Auditoria Obrigatório para Certificado de Treinamento (Norma: {norma}):**
+            
+            1.  **Informações do Trabalhador:** Verifique se o nome completo e o CPF do trabalhador estão presentes e legíveis.
+            
+            2.  **Conteúdo Programático e Carga Horária:**
+                *   Verifique se o certificado lista o conteúdo programático.
+                *   Verifique se a carga horária está explícita e compare com o mínimo exigido pela norma na Base de Conhecimento.
+                *   **REGRA:** Se a carga horária for insuficiente ou o conteúdo programático estiver ausente, aponte como 'Não Conforme'.
+                
+            3.  **Assinaturas dos Responsáveis:**
+                *   Verifique se o certificado possui a(s) assinatura(s) do(s) instrutor(es) e/ou do responsável técnico.
+                *   **REGRA:** Se estas assinaturas estiverem ausentes, o item é 'Não Conforme'.
+                
+            4.  **Assinatura do TRABALHADOR (Item Crítico):**
+                *   Verifique se o certificado possui um campo para a assinatura do trabalhador e se ele está assinado. A assinatura do trabalhador é a evidência de que ele recebeu o treinamento.
+                *   **REGRA:** Se a assinatura do trabalhador estiver ausente, este item é **'Não Conforme'**. Não aceite o documento como totalmente conforme sem ela.
+
+            5.  **Consistência das Datas:** A data de realização do treinamento não pode ser futura em relação à data da auditoria ({data_atual}).
+            """
+            json_example = """
+              "resumo_executivo": "O certificado de treinamento apresenta uma não conformidade crítica devido à ausência da assinatura do trabalhador, o que compromete a comprovação de que o treinamento foi efetivamente recebido.",
+              "pontos_de_nao_conformidade": [
+                {
+                  "item": "Ausência da assinatura do trabalhador",
+                  "referencia_normativa": "Princípios de auditoria e NR-01 (registro de treinamentos)",
+                  "observacao": "Na página 1, o campo destinado à assinatura do funcionário está em branco. A ausência desta assinatura impede a validação de que o trabalhador participou e concluiu o treinamento."
+                }
+              ]
+            """
+
+        elif doc_type == "ASO":
+            checklist_instrucoes = f"""
+            **Checklist de Auditoria Obrigatório para Atestado de Saúde Ocupacional (ASO - NR-07):**
+            
+            1.  **Identificação Completa:** Verifique se o ASO contém o nome completo do trabalhador, número de CPF, e a função desempenhada.
+            
+            2.  **Dados do Exame:**
+                *   Verifique se o tipo de exame (admissional, periódico, demissional, etc.) está claro.
+                *   Confira se os riscos ocupacionais específicos (se houver) estão listados.
+                *   Verifique se a data de emissão do ASO é explícita e não é uma data futura em relação à data da auditoria ({data_atual}).
+            
+            3.  **Assinatura do Médico (Item Crítico):**
+                *   Verifique se o ASO contém o nome, número do conselho de classe (CRM) e a **assinatura** do médico responsável pelo exame.
+                *   **REGRA:** Se a assinatura do médico estiver ausente, o documento é inválido. Aponte como 'Não Conforme'.
+
+            4.  **Assinatura do Trabalhador (Item Crítico):**
+                *   Verifique se o ASO contém um campo para a assinatura do trabalhador e se está assinado. A assinatura do trabalhador indica ciência do resultado.
+                *   **REGRA:** Embora a ausência da assinatura do trabalhador seja uma falha de registro, a do médico é mais crítica. Se a do trabalhador faltar, aponte como 'Não Conforme' e mencione a falha.
+                
+            5.  **Parecer de Aptidão:** O documento deve concluir de forma clara se o trabalhador está 'Apto' ou 'Inapto' para a função.
+            """
+            json_example = """
+              "resumo_executivo": "O ASO apresenta uma não conformidade crítica que invalida o documento: a ausência da assinatura do médico responsável. Sem esta assinatura, não há comprovação legal da avaliação de saúde.",
+              "pontos_de_nao_conformidade": [
+                {
+                  "item": "Ausência da assinatura do médico responsável",
+                  "referencia_normativa": "NR-07, item 7.5.19.1.g",
+                  "observacao": "Na página 1, embora o nome e o CRM do médico estejam impressos, o campo destinado à sua assinatura está em branco. Isso torna o documento legalmente inválido para comprovar a aptidão do trabalhador."
+                }
+              ]
+            """
+        else:
+            checklist_instrucoes = """
+            **Checklist de Auditoria Geral para Documentos de SST:**
+            1.  **Identificação e Propósito:** Verifique se o documento identifica claramente a empresa, o trabalhador (se aplicável), e seu propósito (ex: Atestado de Saúde Ocupacional, Ordem de Serviço).
+            2.  **Datas e Validade:** Identifique todas as datas presentes (emissão, realização, validade, assinatura). Verifique se são consistentes entre si e se não são datas futuras em relação à data da auditoria. **Aponte como 'Não Conforme' qualquer data de emissão/aprovação futura.**
+            3.  **Conteúdo Essencial:** Verifique se o documento contém as informações mínimas esperadas para seu tipo. Para um ASO, por exemplo, isso inclui o tipo de exame (admissional, periódico), os riscos e o parecer de aptidão (apto/inapto).
+            4.  **Responsáveis e Assinaturas:** Verifique se o documento foi emitido e assinado pelos profissionais responsáveis (ex: médico do trabalho para ASO, técnico de segurança para Ordem de Serviço).
+            """
+            json_example = """
+              "resumo_executivo": "O Atestado de Saúde Ocupacional apresenta uma inconsistência crítica na data de emissão...",
+              "pontos_de_nao_conformidade": [
+                {
+                  "item": "Emissão do documento com data futura",
+                  "referencia_normativa": "Princípios gerais de auditoria de registros",
+                  "observacao": "Na página 1, o campo de data de emissão indica '15 DE DEZEMBRO DE 2025'. Considerando a data da auditoria, este documento é datado no futuro, tornando-o inválido para comprovar a aptidão na data corrente."
+                }
+              ]
+            """
+
+        return f"""
+        **Persona:** Você é um Auditor Líder de SST. Sua análise é baseada em duas fontes: (1) As regras da sua tarefa e (2) a Base de Conhecimento fornecida.
+
+        **Contexto Crítico:** A data de hoje é **{data_atual}**.
+
+        **Base de Conhecimento Normativa (Fonte da Verdade):**
+        A seguir estão trechos de Normas Regulamentadoras. USE ESTA FONTE para preencher a chave "referencia_normativa" no JSON.
+        ---
+        {relevant_knowledge}
+        ---
+
+        **Sua Tarefa (Regras de Análise):**
+        1.  **Análise Crítica:** Use o **Checklist de Auditoria** abaixo para auditar o documento PDF.
+        
+            {checklist_instrucoes}
+
+        2.  **Formatação da Resposta:** Apresente suas conclusões no seguinte formato JSON ESTRITO.
+
+        3.  **Justificativa Robusta com Evidências:**
+            *   Para cada "ponto_de_nao_conformidade", a 'observacao' deve citar a página e a evidência do PDF.
+            *   **REGRA CRUCIAL:** A chave "referencia_normativa" DEVE ser preenchida com o item ou seção relevante encontrado na **'Base de Conhecimento Normativa'** acima. **NUNCA cite o 'Checklist de Auditoria' como referência.**
+
+        **Estrutura JSON de Saída Obrigatória (Siga o exemplo):**
+        ```json
+        {{
+          "parecer_final": "Conforme | Não Conforme | Conforme com Ressalvas",
+          "resumo_executivo": "...",
+          "pontos_de_nao_conformidade": [
+            {{
+              "item": "Ausência da assinatura do trabalhador no certificado",
+              "referencia_normativa": "NR-01, item 1.7.1.1",
+              "observacao": "Na página 1, o campo para assinatura do funcionário está em branco. A Base de Conhecimento, no item 1.7.1.1 da NR-01, exige a assinatura do trabalhador como item obrigatório no certificado."
+            }}
+          ]
+        }}
+        ```
+        """
+
+    def _parse_advanced_audit_result(self, json_string: str) -> dict:
+        try:
+            match = re.search(r'\{.*\}', json_string, re.DOTALL)
+            if not match:
+                return {"summary": "Falha na Análise", "details": [{"item_verificacao": "Resposta Bruta da IA", "observacao": json_string, "status": "Não Conforme"}]}
+            data = json.loads(match.group(0))
+            summary = data.get("parecer_final", "Indefinido")
+            details = []
+            
+            if data.get("resumo_executivo"):
+                status_resumo = "Conforme" if "conforme" in summary.lower() else "Não Conforme"
+                details.append({"item_verificacao": "Resumo Executivo da Auditoria", "referencia_normativa": "N/A", "observacao": data["resumo_executivo"], "status": status_resumo})
+            
+            for item in data.get("pontos_de_nao_conformidade", []):
+                details.append({"item_verificacao": item.get("item", ""), "referencia_normativa": item.get("referencia_normativa", ""), "observacao": item.get("observacao", ""), "status": "Não Conforme"})
+
+            for item in data.get("pontos_de_ressalva", []):
+                details.append({
+                    "item_verificacao": f"Ressalva: {item.get('item', '')}",
+                    "referencia_normativa": item.get("referencia_normativa", ""),
+                    "observacao": item.get("observacao", ""),
+                    "status": "Ressalva"
+                })
+
+            return {"summary": summary, "details": details}
+        except (json.JSONDecodeError, AttributeError):
+            return {"summary": "Falha na Análise (Erro de JSON)", "details": [{"item_verificacao": "Resposta Bruta da IA", "observacao": json_string, "status": "Não Conforme"}]}
+
+    def create_action_plan_from_audit(
+        self, 
+        audit_result: dict, 
+        company_id: str, 
+        doc_id: str, 
+        employee_id: Optional[str] = None
+    ) -> int:
+        """
+        O employee_id ainda pode ser passado para o LOG, mas NÃO será inserido na planilha.
+        """
+        if "não conforme" not in audit_result.get("summary", "").lower():
+            return 0
+            
+        actionable_items = [
+            item for item in audit_result.get("details", []) 
+            if item.get("status", "").lower() == "não conforme" 
+            and "resumo executivo" not in item.get("item_verificacao", "").lower()
+        ]
+        
+        if not actionable_items: 
+            return 0
+        
+        from operations.action_plan import ActionPlanManager
+        # ✅ USA unit_id ao invés de spreadsheet_id
+        if not self.supabase_ops or not self.supabase_ops.unit_id:
+            raise ValueError("SupabaseOperations não inicializado corretamente ou unit_id não disponível")
+        action_plan_manager = ActionPlanManager(unit_id=str(self.supabase_ops.unit_id))
+        
+        audit_run_id = f"audit_{doc_id}_{random.randint(1000, 9999)}"
+        created_count = 0
+        
+        for item in actionable_items:
+            # ✅ Passa employee_id apenas para o LOG interno
+            if action_plan_manager.add_action_item(
+                audit_run_id, company_id, doc_id, item, employee_id=employee_id
+            ):
+                created_count += 1
+        
+        if created_count > 0:
+            st.info(f"{created_count} item(ns) de não conformidade foram adicionados ao Plano de Ação.")
+        
+        return created_count
