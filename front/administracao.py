@@ -175,10 +175,25 @@ def show_user_management(matrix_manager):
         st.info("Nenhum usuário cadastrado."); return
 
     users_df = pd.DataFrame(users)
-    st.dataframe(users_df[['nome', 'email', 'role', 'unidade_associada', 'plano', 'status_assinatura']], use_container_width=True, hide_index=True)
-    
+
+    # ✅ Adicionar informações de limite
+    def get_plan_display(row):
+        if row['role'] == 'admin':
+            return '👑 Admin (Ilimitado)'
+        plan = row.get('plano')
+        if plan == 'premium_ia':
+            return '💎 Premium IA (5/min, 100/dia)'
+        elif plan == 'pro':
+            return '🚀 Pro (10/min, 250/dia)'
+        else:
+            return '❌ Sem Plano'
+
+    users_df['plano_display'] = users_df.apply(get_plan_display, axis=1)
+
+    st.dataframe(users_df[['nome', 'email', 'role', 'plano_display', 'status_assinatura']], use_container_width=True, hide_index=True)
+
     selected_user_email = st.selectbox("Selecione um usuário para ações rápidas:", options=[''] + users_df['email'].tolist())
-    
+
     if selected_user_email:
         user_data = users_df[users_df['email'] == selected_user_email].iloc[0].to_dict()
         col1, col2 = st.columns(2)
@@ -321,14 +336,15 @@ def show_super_admin_view():
     pending_requests = matrix_manager.get_pending_access_requests()
     pending_count = len(pending_requests)
 
-    tab_dashboard, tab_requests, tab_users, tab_provision, tab_matrix, tab_rules, tab_audit = st.tabs([
+    tab_dashboard, tab_requests, tab_users, tab_provision, tab_matrix, tab_rules, tab_audit, tab_api_usage = st.tabs([
         f"📊 Dashboard Global",
         f"📬 Solicitações de Acesso ({pending_count})" if pending_count > 0 else "📬 Solicitações de Acesso",
         "👤 Gerenciar Usuários",
         "🚀 Provisionar Cliente",
         "🏗️ Matriz Global",
         "📜 Regras de Conformidade",
-        "🛡️ Logs de Auditoria"
+        "🛡️ Logs de Auditoria",
+        "🤖 Uso de API"  # ✅ NOVA ABA
     ])
 
     with tab_dashboard:
@@ -446,7 +462,244 @@ def show_super_admin_view():
             st.dataframe(logs_df.sort_values(by='timestamp', ascending=False), use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum registro de log encontrado.")
-            
+
+    # ✅ NOVA ABA: Monitoramento de uso de API
+    with tab_api_usage:
+        st.header("🤖 Monitoramento de Uso da API de IA")
+
+        st.info("""
+        **Limites da API Gemini:**
+        - 🚀 **Pro** (Flash): 10 req/min, 250 req/dia
+        - 💎 **Premium IA** (Pro): 5 req/min, 100 req/dia
+        - 👑 **Admin**: Ilimitado
+        """)
+
+        # ✅ Estatísticas gerais
+        from AI.api_Operation import PDFQA
+
+        # Buscar todos os usuários
+        users = matrix_manager.get_all_users()
+
+        if not users:
+            st.warning("Nenhum usuário cadastrado.")
+            return
+
+        users_df = pd.DataFrame(users)
+
+        # Calcular estatísticas
+        total_users = len(users_df)
+        admin_users = len(users_df[users_df['role'] == 'admin'])
+        pro_users = len(users_df[users_df['plano'] == 'pro'])
+        premium_users = len(users_df[users_df['plano'] == 'premium_ia'])
+        no_plan_users = len(users_df[
+            (users_df['role'] != 'admin') &
+            (~users_df['plano'].isin(['pro', 'premium_ia']))
+        ])
+
+        col1, col2, col3, col4, col5 = st.columns(5)
+
+        col1.metric("👥 Total", total_users)
+        col2.metric("👑 Admin", admin_users)
+        col3.metric("🚀 Pro", pro_users)
+        col4.metric("💎 Premium", premium_users)
+        col5.metric("❌ Sem Plano", no_plan_users, delta_color="inverse")
+
+        st.markdown("---")
+
+        # ✅ Capacidade total do sistema
+        st.subheader("📊 Capacidade Total do Sistema")
+
+        # Calcular capacidade teórica
+        pro_rpm = pro_users * 10
+        pro_rpd = pro_users * 250
+        premium_rpm = premium_users * 5
+        premium_rpd = premium_users * 100
+
+        col_cap1, col_cap2 = st.columns(2)
+
+        with col_cap1:
+            st.markdown("##### ⚡ Capacidade por Minuto")
+            st.markdown(f"""
+            - **Pro (Flash):** {pro_rpm} req/min ({pro_users} usuários × 10)
+            - **Premium IA (Pro):** {premium_rpm} req/min ({premium_users} usuários × 5)
+            - **Total:** {pro_rpm + premium_rpm} req/min
+            - **Admin:** Ilimitado
+            """)
+
+        with col_cap2:
+            st.markdown("##### 📅 Capacidade Diária")
+            st.markdown(f"""
+            - **Pro (Flash):** {pro_rpd:,} req/dia ({pro_users} usuários × 250)
+            - **Premium IA (Pro):** {premium_rpd:,} req/dia ({premium_users} usuários × 100)
+            - **Total:** {pro_rpd + premium_rpd:,} req/dia
+            - **Admin:** Ilimitado
+            """)
+
+        st.markdown("---")
+
+        # ✅ Lista detalhada de usuários
+        st.subheader("👥 Limites por Usuário")
+
+        # Adicionar colunas de limite
+        def get_limit_info(row):
+            if row['role'] == 'admin':
+                return {
+                    'rpm': '♾️ Ilimitado',
+                    'rpd': '♾️ Ilimitado',
+                    'modelo': 'Flash + Pro',
+                    'status_icon': '👑'
+                }
+
+            plan = row.get('plano')
+            status = row.get('status_assinatura', 'inativo')
+
+            if status != 'ativo' and status != 'trial':
+                return {
+                    'rpm': '❌ Inativo',
+                    'rpd': '❌ Inativo',
+                    'modelo': '-',
+                    'status_icon': '❌'
+                }
+
+            if plan == 'premium_ia':
+                return {
+                    'rpm': '5/min',
+                    'rpd': '100/dia',
+                    'modelo': 'Gemini Pro',
+                    'status_icon': '💎'
+                }
+            elif plan == 'pro':
+                return {
+                    'rpm': '10/min',
+                    'rpd': '250/dia',
+                    'modelo': 'Gemini Flash',
+                    'status_icon': '🚀'
+                }
+            else:
+                return {
+                    'rpm': '❌ Sem plano',
+                    'rpd': '❌ Sem plano',
+                    'modelo': '-',
+                    'status_icon': '⚠️'
+                }
+
+        # Aplicar função
+        limit_info = users_df.apply(get_limit_info, axis=1, result_type='expand')
+        users_df = pd.concat([users_df, limit_info], axis=1)
+
+        # Exibir tabela
+        st.dataframe(
+            users_df[[
+                'status_icon', 'nome', 'email', 'role',
+                'modelo', 'rpm', 'rpd', 'status_assinatura'
+            ]],
+            column_config={
+                'status_icon': st.column_config.TextColumn('', width='small'),
+                'nome': 'Nome',
+                'email': 'Email',
+                'role': 'Perfil',
+                'modelo': '🤖 Modelo',
+                'rpm': '⚡ Por Minuto',
+                'rpd': '📊 Por Dia',
+                'status_assinatura': 'Status'
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.markdown("---")
+
+        # ✅ Alertas e recomendações
+        st.subheader("⚠️ Alertas e Recomendações")
+
+        if no_plan_users > 0:
+            st.warning(f"""
+            **{no_plan_users} usuário(s) sem plano de IA**
+
+            Estes usuários não podem usar as funcionalidades de análise com IA.
+            Recomendação: Atribua um plano (Pro ou Premium IA) para eles.
+            """)
+
+        # Verificar usuários com trial próximo do fim
+        trial_users = users_df[
+            (users_df['status_assinatura'] == 'trial') &
+            (users_df['data_fim_trial'].notna())
+        ]
+
+        if not trial_users.empty:
+            from datetime import datetime, timedelta
+            today = pd.Timestamp.now()
+
+            expiring_soon = []
+            for _, user in trial_users.iterrows():
+                trial_end = pd.to_datetime(user['data_fim_trial'])
+                days_left = (trial_end - today).days
+                if days_left <= 7:
+                    expiring_soon.append((user['nome'], days_left))
+
+            if expiring_soon:
+                st.warning(f"""
+                **{len(expiring_soon)} trial(s) expirando em breve:**
+
+                {chr(10).join([f"- {name}: {days} dia(s) restante(s)" for name, days in expiring_soon])}
+                """)
+
+        # Dica de otimização
+        if pro_users > premium_users * 3:
+            st.info("""
+            💡 **Dica de Otimização:**
+
+            Você tem muitos usuários no plano Pro. Considere:
+            - Migrar usuários que fazem auditorias frequentes para Premium IA
+            - O modelo Pro é mais preciso para análises complexas
+            """)
+
+        # ✅ Dashboard de Uso em Tempo Real por Usuario
+        st.markdown("---")
+        st.subheader("📈 Uso em Tempo Real por Usuário")
+
+        col_real1, col_real2 = st.columns(2)
+
+        with col_real1:
+            st.markdown("##### 🚀 Plano Pro (Flash)")
+            pro_limiter = PDFQA._rate_limiters.get('pro')
+
+            if pro_limiter and pro_users > 0:
+                # Listar usuários Pro e seu uso
+                pro_user_list = users_df[users_df['plano'] == 'pro']
+
+                for _, user in pro_user_list.iterrows():
+                    stats = pro_limiter.get_usage_stats(user['email'])
+
+                    with st.expander(f"👤 {user['nome']}", expanded=False):
+                        col_a, col_b = st.columns(2)
+                        col_a.metric("Min", f"{stats['calls_last_minute']}/10")
+                        col_b.metric("Dia", f"{stats['calls_today']}/250")
+            else:
+                st.info("Nenhum usuário Pro ativo")
+
+        with col_real2:
+            st.markdown("##### 💎 Plano Premium IA (Pro)")
+            premium_limiter = PDFQA._rate_limiters.get('premium_ia')
+
+            if premium_limiter and premium_users > 0:
+                # Listar usuários Premium e seu uso
+                premium_user_list = users_df[users_df['plano'] == 'premium_ia']
+
+                for _, user in premium_user_list.iterrows():
+                    stats = premium_limiter.get_usage_stats(user['email'])
+
+                    with st.expander(f"👤 {user['nome']}", expanded=False):
+                        col_a, col_b = st.columns(2)
+                        col_a.metric("Min", f"{stats['calls_last_minute']}/5")
+                        col_b.metric("Dia", f"{stats['calls_today']}/100")
+            else:
+                st.info("Nenhum usuário Premium IA ativo")
+
+        # Botão de refresh
+        if st.button("🔄 Atualizar Dados", key="refresh_admin_stats"):
+            st.rerun()
+
     handle_user_dialog(matrix_manager)
     handle_delete_dialog(matrix_manager)
 

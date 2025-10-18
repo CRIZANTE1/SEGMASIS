@@ -65,7 +65,7 @@ def style_audit_table(row):
 def _run_analysis_and_audit(manager, analysis_method_name, uploader_key, doc_type_str, employee_id_key=None):
     """
     Função auxiliar que executa a análise de PDF e auditoria com IA.
-    
+
     Args:
         manager: Manager que contém o método de análise
         analysis_method_name: Nome do método de análise (ex: 'analyze_aso_pdf')
@@ -75,7 +75,38 @@ def _run_analysis_and_audit(manager, analysis_method_name, uploader_key, doc_typ
     """
     if not st.session_state.get(uploader_key):
         return
-    
+
+    # ✅ Verificar se usuário tem plano antes de processar
+    from auth.auth_utils import get_user_email
+    from managers.matrix_manager import MatrixManager
+
+    user_email = get_user_email()
+    if user_email:
+        matrix_manager = MatrixManager()
+        user_info = matrix_manager.get_user_info(user_email)
+
+        if user_info:
+            user_role = user_info.get('role')
+            user_plan = user_info.get('plano')
+
+            # Admin sempre pode
+            if user_role != 'admin':
+                # Verificar se tem plano válido
+                if user_plan not in ['pro', 'premium_ia']:
+                    st.error("""
+                    ❌ **Análise com IA Não Disponível**
+
+                    Você não possui um plano ativo para usar esta funcionalidade.
+
+                    Entre em contato com o administrador para ativar:
+                    - **🚀 Plano Pro**: 10 análises/min, 250/dia
+                    - **💎 Plano Premium IA**: 5 análises/min, 100/dia
+                    """)
+                    # Limpa o uploader
+                    if uploader_key in st.session_state:
+                        del st.session_state[uploader_key]
+                    return
+
     anexo = st.session_state[uploader_key]
     
     with st.spinner(f"🤖 Analisando {doc_type_str} com IA..."):
